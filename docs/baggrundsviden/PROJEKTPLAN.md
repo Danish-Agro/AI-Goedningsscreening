@@ -82,9 +82,10 @@ Mvh Jonas
 ### Denne uge (uge 7: 10-16 feb):
 
 **Mandag-Tirsdag (10-11 feb):**
-- [ ] Send email til gruppe om platformvalg (se ovenfor)
-- [ ] Byg AI-lag med Claude API lokalt på M4 Mini
-- [ ] Test med 3-5 konkrete spørgsmål:
+✅ **DONE:**
+- [x] Send email til gruppe om platformvalg (se ovenfor)
+- [x] Byg AI-lag med OpenAI API lokalt på M4 Mini
+- [x] Test med 3-5 konkrete spørgsmål:
   - "Hvilke marker har størst behov for gødning?"
   - "Hvad anbefaler du til mark 6-0?"
   - "Hvilke marker mangler fosfor?"
