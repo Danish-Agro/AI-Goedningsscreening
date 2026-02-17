@@ -151,6 +151,13 @@ class NPKCalculator:
     
     # P-loft according to legislation
     P_MAX = 30  # kg P/ha max
+
+    @staticmethod
+    def _format_adjustment(multiplier: float) -> str:
+        """Format multiplier as a human-readable percentage adjustment."""
+        if multiplier == 1.0:
+            return "Ingen"
+        return f"{round((multiplier - 1) * 100):+d}%"
     
     @classmethod
     def calculate_requirements(
@@ -226,18 +233,18 @@ class NPKCalculator:
                 'P': {
                     'amount_kg_ha': round(p_requirement, 1),
                     'soil_category': p_category,
-                    'adjustment': f"{int((p_adjustment - 1) * 100):+d}%" if p_adjustment != 1.0 else "Ingen",
+                    'adjustment': cls._format_adjustment(p_adjustment),
                     'note': p_note
                 },
                 'K': {
                     'amount_kg_ha': round(k_requirement, 1),
                     'soil_category': k_category,
-                    'adjustment': f"{int((k_adjustment - 1) * 100):+d}%" if k_adjustment != 1.0 else "Ingen",
+                    'adjustment': cls._format_adjustment(k_adjustment),
                 },
                 'Mg': {
                     'amount_kg_ha': round(mg_requirement, 1),
                     'soil_category': mg_category,
-                    'adjustment': f"{int((mg_adjustment - 1) * 100):+d}%" if mg_adjustment != 1.0 else "Ingen",
+                    'adjustment': cls._format_adjustment(mg_adjustment),
                 },
                 'S': {
                     'amount_kg_ha': round(s_requirement, 1),
@@ -260,50 +267,74 @@ class NPKCalculator:
         """
         products = []
         
-        n_need = requirements['requirements']['N']['amount_kg_ha']
-        s_need = requirements['requirements']['S']['amount_kg_ha']
-        p_need = requirements['requirements']['P']['amount_kg_ha']
-        k_need = requirements['requirements']['K']['amount_kg_ha']
-        
-        # N + S products
-        if n_need > 0:
-            # YaraBela SULFAN (27% N, 4% S)
-            products.append({
-                'name': 'YaraBela SULFAN 24',
-                'composition': '27-0-0 (+4S)',
-                'purpose': 'N og S behov',
-                'amount_kg_ha': round(n_need / 0.27 * 1.15, 0),  # 15% buffer
-                'note': f'Dækker ca. {round(n_need, 0)} kg N og {round(n_need * 0.04/0.27, 0)} kg S'
-            })
-        
-        # NPK compound
-        if p_need > 5 and k_need > 10:
+        n_remaining = requirements['requirements']['N']['amount_kg_ha']
+        s_remaining = requirements['requirements']['S']['amount_kg_ha']
+        p_remaining = requirements['requirements']['P']['amount_kg_ha']
+        k_remaining = requirements['requirements']['K']['amount_kg_ha']
+
+        # Prefer one base NPK product if both P and K are needed.
+        if p_remaining > 5 and k_remaining > 10:
+            npk_amount = max(p_remaining / 0.03, k_remaining / 0.15)
+            p_from_npk = npk_amount * 0.03
+            k_from_npk = npk_amount * 0.15
+            n_from_npk = npk_amount * 0.15
+
             products.append({
                 'name': 'NPK 15-3-15',
                 'composition': '15-3-15',
-                'purpose': 'Kombineret NPK',
-                'amount_kg_ha': round(max(p_need / 0.03, k_need / 0.15), 0),
-                'note': 'Grundgødning med balanceret NPK'
+                'purpose': 'Grundgødning',
+                'amount_kg_ha': round(npk_amount, 0),
+                'note': (
+                    f"Dækker ca. {round(n_from_npk, 0)} kg N, "
+                    f"{round(p_from_npk, 0)} kg P og {round(k_from_npk, 0)} kg K"
+                )
             })
-        
-        # P product if needed separately
-        elif p_need > 10:
+
+            n_remaining = max(0.0, n_remaining - n_from_npk)
+            p_remaining = max(0.0, p_remaining - p_from_npk)
+            k_remaining = max(0.0, k_remaining - k_from_npk)
+        elif p_remaining > 10:
+            np_amount = p_remaining / 0.20
+            p_from_np = np_amount * 0.20
+            n_from_np = np_amount * 0.18
             products.append({
                 'name': 'Superfos NP 18-20',
                 'composition': '18-20-0',
                 'purpose': 'Fosfor + N',
-                'amount_kg_ha': round(p_need / 0.20 * 1.1, 0),
-                'note': f'Primært til P-behov'
+                'amount_kg_ha': round(np_amount, 0),
+                'note': f"Dækker ca. {round(n_from_np, 0)} kg N og {round(p_from_np, 0)} kg P"
             })
-        
-        # K product if needed separately
-        if k_need > 50:
+            n_remaining = max(0.0, n_remaining - n_from_np)
+            p_remaining = max(0.0, p_remaining - p_from_np)
+
+        # Add K-only product only if K is still missing after base product.
+        if k_remaining > 10:
+            kcl_amount = k_remaining / 0.60
             products.append({
                 'name': 'Kaliumchlorid 60%',
                 'composition': '0-0-60',
                 'purpose': 'Kalium',
-                'amount_kg_ha': round(k_need / 0.60, 0),
-                'note': 'Højt K-behov'
+                'amount_kg_ha': round(kcl_amount, 0),
+                'note': f"Dækker ca. {round(kcl_amount * 0.60, 0)} kg K"
+            })
+            k_remaining = 0.0
+
+        # Final top-up for remaining N and S.
+        if n_remaining > 0.1 or s_remaining > 0.1:
+            # YaraBela SULFAN 24: 27% N, 4% S.
+            sulfan_amount = max(
+                n_remaining / 0.27 if n_remaining > 0 else 0,
+                s_remaining / 0.04 if s_remaining > 0 else 0
+            )
+            products.append({
+                'name': 'YaraBela SULFAN 24',
+                'composition': '27-0-0 (+4S)',
+                'purpose': 'Supplerende N og S',
+                'amount_kg_ha': round(sulfan_amount, 0),
+                'note': (
+                    f"Dækker ca. {round(sulfan_amount * 0.27, 0)} kg N "
+                    f"og {round(sulfan_amount * 0.04, 0)} kg S"
+                )
             })
         
         return products
@@ -332,8 +363,24 @@ if __name__ == '__main__':
     print(f"Afgrøde: {crop.title()}")
     print(f"Udbytteniveau: {yield_level.title()}\n")
     
-    # Calculate for top 3 priority fields
-    for i, sample in enumerate(samples[:3], 1):
+    # Calculate for top 3 unique fields (avoid duplicate samples from same field)
+    best_sample_per_field = {}
+    for sample in samples:
+        metadata = sample.get('metadata', {})
+        field_key = metadata.get('field_id') or metadata.get('marknummer')
+        if not field_key:
+            continue
+        existing = best_sample_per_field.get(field_key)
+        if existing is None or sample.get('priority_score', 0) > existing.get('priority_score', 0):
+            best_sample_per_field[field_key] = sample
+
+    unique_priority_samples = sorted(
+        best_sample_per_field.values(),
+        key=lambda s: s.get('priority_score', 0),
+        reverse=True
+    )[:3]
+
+    for i, sample in enumerate(unique_priority_samples, 1):
         metadata = sample['metadata']
         
         print(f"\n{'='*60}")

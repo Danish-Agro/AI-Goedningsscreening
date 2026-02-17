@@ -213,9 +213,25 @@ if __name__ == '__main__':
             json.dump(samples_with_priority, f, indent=2, ensure_ascii=False)
         print(f"Saved to {output_file}")
     else:
-        # Print top 5 samples
+        # Print top 5 unique fields
+        best_sample_per_field = {}
+        for sample in samples_with_priority:
+            metadata = sample.get('metadata', {})
+            field_key = metadata.get('field_id') or metadata.get('marknummer')
+            if not field_key:
+                continue
+            existing = best_sample_per_field.get(field_key)
+            if existing is None or sample.get('priority_score', 0) > existing.get('priority_score', 0):
+                best_sample_per_field[field_key] = sample
+
+        unique_fields = sorted(
+            best_sample_per_field.values(),
+            key=lambda s: s.get('priority_score', 0),
+            reverse=True
+        )
+
         print("\n=== TOP 5 FIELDS BY PRIORITY ===")
-        for i, sample in enumerate(samples_with_priority[:5], 1):
+        for i, sample in enumerate(unique_fields[:5], 1):
             metadata = sample['metadata']
             categories = sample['categories']
             priority = sample['priority_score']

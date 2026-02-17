@@ -69,8 +69,8 @@ class SoilOptixParser:
             ordrenummer = self.df.iloc[self.ROW_ORDRENUMMER, col_idx]
             
             if pd.isna(ordrenummer):
-                # No more samples
-                break
+                # Skip empty columns; some files contain gaps between sample columns.
+                continue
                 
             sample = self._parse_sample(col_idx, kundenr)
             if sample:
@@ -112,7 +112,7 @@ class SoilOptixParser:
                     'kundenr': kundenr,
                     'ordrenummer': int(ordrenummer) if not pd.isna(ordrenummer) else None,
                     'analyse_nr': int(analyse_nr) if not pd.isna(analyse_nr) else None,
-                    'provebetegnelse': int(provebetegnelse) if not pd.isna(provebetegnelse) else None,
+                    'provebetegnelse': str(provebetegnelse) if not pd.isna(provebetegnelse) else None,
                     'field_id': str(field_id) if not pd.isna(field_id) else None,
                     'marknummer': str(marknummer) if not pd.isna(marknummer) else None,
                 },

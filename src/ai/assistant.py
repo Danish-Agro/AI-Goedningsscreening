@@ -67,20 +67,20 @@ TONE:
         summary = []
         
         for sample in self.samples[:50]:  # Limit to avoid token limits
-            metadata = sample['metadata']
-            categories = sample['categories']
-            measurements = sample['measurements']
+            metadata = sample.get('metadata', {})
+            categories = sample.get('categories', {})
+            measurements = sample.get('measurements', {})
             priority = sample.get('priority_score', 0)
             
             summary.append(f"""
-Mark: {metadata['marknummer']} (Field ID: {metadata['field_id']})
+Mark: {metadata.get('marknummer', 'ukendt')} (Field ID: {metadata.get('field_id', 'ukendt')})
 Priority Score: {priority}
 Næringsstof status:
-- Rt (pH+0.5): {categories['rt']} (værdi: {measurements['rt']})
-- Fosfor: {categories['fosfor']} (værdi: {measurements['fosfor_mg_100g']} mg/100g)
-- Kalium: {categories['kalium']} (værdi: {measurements['kalium_mg_100g']} mg/100g)
-- Magnesium: {categories['magnesium']} (værdi: {measurements['magnesium_mg_100g']} mg/100g)
-Jordtype: {measurements['ler_pct']}% ler, {measurements['finsand_pct']}% finsand
+- Rt (pH+0.5): {categories.get('rt', 'ukendt')} (værdi: {measurements.get('rt')})
+- Fosfor: {categories.get('fosfor', 'ukendt')} (værdi: {measurements.get('fosfor_mg_100g')} mg/100g)
+- Kalium: {categories.get('kalium', 'ukendt')} (værdi: {measurements.get('kalium_mg_100g')} mg/100g)
+- Magnesium: {categories.get('magnesium', 'ukendt')} (værdi: {measurements.get('magnesium_mg_100g')} mg/100g)
+Jordtype: {measurements.get('ler_pct')}% ler, {measurements.get('finsand_pct')}% finsand
 """)
         
         return "\n---\n".join(summary)
