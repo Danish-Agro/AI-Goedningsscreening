@@ -23,6 +23,7 @@ from openai import OpenAI
 from parsers.soiloptix_parser import SoilOptixParser
 from analysis.nutrient_categorizer import NutrientCategorizer
 from analysis.beregningsgrundlag import beregn_kalkbehov, beregn_jb_nummer
+from ai.assistant import FertilizerAssistant
 
 load_dotenv()
 
@@ -403,12 +404,14 @@ def analyse():
 
     samples = []
     kundenavn_display = ""
+    first_mappe = ""
     for mappe_navn, ids in kunde_ids.items():
         mappe   = kunde_mappe(mappe_navn)
         meta_k  = load_meta(mappe)
         alle    = load_samples(mappe)
         if not kundenavn_display:
             kundenavn_display = meta_k.get("navn_original", mappe_navn)
+            first_mappe = mappe_navn
         for s in alle:
             if s.get("_id") in ids:
                 samples.append(s)
@@ -433,10 +436,35 @@ def analyse():
         samples=samples,
         anbefalinger=anbefalinger,
         kundenavn=kundenavn_display,
+        kundenavn_mappe=first_mappe,
         kalk_count=kalk_count,
         ai_aktiv=openai_client is not None,
         dato=dato,
     )
+
+
+@app.post("/chat")
+def chat():
+    data = request.get_json(silent=True) or {}
+    question      = (data.get("question") or "").strip()
+    mappe_navn    = (data.get("kundenavn_mappe") or "").strip()
+
+    if not question:
+        return jsonify({"error": "Spørgsmål mangler."}), 400
+    if not mappe_navn:
+        return jsonify({"error": "Kundenavn mangler."}), 400
+
+    mappe   = kunde_mappe(mappe_navn)
+    samples = load_samples(mappe)
+    if not samples:
+        return jsonify({"error": "Ingen marker fundet for denne kunde."}), 404
+
+    samples = process_samples(samples)
+    assistant = FertilizerAssistant.from_samples(
+        samples, api_key=os.getenv("OPENAI_API_KEY")
+    )
+    answer = assistant.ask(question)
+    return jsonify({"answer": answer})
 
 
 # ---------------------------------------------------------------------------

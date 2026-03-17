@@ -78,6 +78,48 @@
     .disclaimer { font-size: .8rem; color: #6c757d; }
 
     /* ----------------------------------------------------------------
+       Chat
+    ---------------------------------------------------------------- */
+    .chat-card { border-top: 3px solid #2e7d32; }
+    .chat-log {
+      height: 280px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: .75rem;
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .chat-bubble {
+      max-width: 80%;
+      padding: .5rem .75rem;
+      border-radius: 10px;
+      font-size: .9rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .chat-bubble.user {
+      background: #2e7d32;
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 2px;
+    }
+    .chat-bubble.assistant {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      align-self: flex-start;
+      border-bottom-left-radius: 2px;
+    }
+    .chat-bubble.thinking {
+      background: #e9ecef;
+      color: #6c757d;
+      align-self: flex-start;
+      font-style: italic;
+    }
+
+    /* ----------------------------------------------------------------
        Print / PDF
     ---------------------------------------------------------------- */
     .print-header { display: none; }
@@ -268,7 +310,39 @@
     {% endfor %}
   </div><!-- /row -->
 
-  <p class="text-center disclaimer mt-5 no-print">
+  <!-- Chat -->
+  {% if ai_aktiv %}
+  <div class="card chat-card shadow-sm mt-5 mb-3 no-print"
+       data-mappe="{{ kundenavn_mappe }}">
+    <div class="card-body p-4">
+      <h6 class="fw-bold text-success mb-3">
+        Spørg om markerne
+        <small class="fw-normal text-muted">— stil spørgsmål om de analyserede marker</small>
+      </h6>
+
+      <div class="chat-log mb-3" id="chatLog">
+        <div class="chat-bubble assistant">
+          Hej! Stil mig spørgsmål om de {{ samples|length }} analyserede
+          mark{{ 'er' if samples|length != 1 }}. Fx: "Hvilken mark har størst
+          behov for fosfor?" eller "Prioriter de 5 marker".
+        </div>
+      </div>
+
+      <div class="input-group">
+        <input type="text" id="chatInput" class="form-control"
+               placeholder="Skriv et spørgsmål…" autocomplete="off">
+        <button class="btn btn-success" id="chatSend" type="button">
+          Send
+        </button>
+      </div>
+      <div class="form-text mt-1">
+        Screening — ikke en godkendt gødningsplan. Kræver faglig validering.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <p class="text-center disclaimer mt-3 no-print">
     Screening genereret af AI Gødningsscreening — Danish Agro intern POC —
     ikke en juridisk godkendt gødningsplan. Kræver faglig validering.
   </p>
@@ -336,6 +410,61 @@
   });
 
   updateDirBtn();
+})();
+</script>
+
+<script>
+/* Chat */
+(function () {
+  const card  = document.querySelector('.chat-card');
+  if (!card) return;
+
+  const mappe  = card.dataset.mappe;
+  const log    = document.getElementById('chatLog');
+  const input  = document.getElementById('chatInput');
+  const btn    = document.getElementById('chatSend');
+
+  function addBubble(text, role) {
+    const el = document.createElement('div');
+    el.className = `chat-bubble ${role}`;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+
+  async function send() {
+    const question = input.value.trim();
+    if (!question) return;
+
+    input.value = '';
+    input.disabled = true;
+    btn.disabled   = true;
+
+    addBubble(question, 'user');
+    const thinking = addBubble('Tænker…', 'thinking');
+
+    try {
+      const resp = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, kundenavn_mappe: mappe }),
+      });
+      const data = await resp.json();
+      thinking.remove();
+      addBubble(data.answer || data.error || 'Intet svar.', 'assistant');
+    } catch {
+      thinking.remove();
+      addBubble('Netværksfejl — prøv igen.', 'assistant');
+    } finally {
+      input.disabled = false;
+      btn.disabled   = false;
+      input.focus();
+    }
+  }
+
+  btn.addEventListener('click', send);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
 })();
 </script>
 </body>

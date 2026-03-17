@@ -328,6 +328,15 @@ class FertilizerAssistant:
             self.samples = json.load(f)
         print(f"Loaded {len(self.samples)} soil samples")
 
+    @classmethod
+    def from_samples(cls, samples: List[Dict[str, Any]], api_key: Optional[str] = None) -> "FertilizerAssistant":
+        """Opret assistent direkte fra en liste af (allerede berigede) samples."""
+        obj = object.__new__(cls)
+        key = api_key or os.getenv("OPENAI_API_KEY")
+        obj.client = OpenAI(api_key=key) if key else None
+        obj.samples = samples
+        return obj
+
     def _category_whitelist(self) -> List[str]:
         return list(ALLOWED_CATEGORIES)
 
