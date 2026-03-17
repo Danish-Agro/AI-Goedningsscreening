@@ -1,71 +1,26 @@
 #!/usr/bin/env python3
 """
 Nutrient Status Categorizer
-Categorizes soil nutrient levels based on threshold values
+Categorizes soil nutrient levels based on threshold values.
+Grænseværdier og jordtype-afhængig logik er importeret fra beregningsgrundlag.py.
 """
 
 from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from analysis.beregningsgrundlag import (
+    kategoriser_rt,
+    kategoriser_mg,
+    kategoriser_fosfor,
+    kategoriser_kalium,
+)
 
-
-@dataclass
-class CategoryThresholds:
-    """Threshold values for categorizing a nutrient"""
-    large_demand_max: float
-    medium_demand_max: float
-    small_demand_max: float
-    ok_max: float
-    small_surplus_max: float
-    large_surplus_max: float
-    # suspicious_surplus starts after large_surplus_max
+# Standard JB-nummer bruges som fallback hvis jordtypedata mangler i prøven.
+# JB5 (sandblandet lerjord) hører til gruppen "JB2_JB4_10" (standardgruppen).
+_FALLBACK_JB = 5
 
 
 class NutrientCategorizer:
-    """Categorizes soil nutrients based on threshold values"""
-    
-    # Based on "Jonas Kategorier for næringsstofindhold.xlsx"
-    # Format: [Large Demand, Medium Demand, Small Demand, OK, Small Surplus, Large Surplus[
-    # Suspicious Surplus is everything above Large Surplus
-    
-    THRESHOLDS = {
-        'rt': CategoryThresholds(
-            large_demand_max=4.5,
-            medium_demand_max=5.0,
-            small_demand_max=6.0,
-            ok_max=6.5,
-            small_surplus_max=7.0,
-            large_surplus_max=8.0
-            # >= 8.0 is Suspicious Surplus
-        ),
-        'fosfor': CategoryThresholds(  # in units of 10 ppm = 1 mg/100g
-            large_demand_max=1.0,
-            medium_demand_max=1.5,
-            small_demand_max=2.0,
-            ok_max=4.0,
-            small_surplus_max=5.0,
-            large_surplus_max=6.0
-            # >= 6.0 is Suspicious Surplus
-        ),
-        'kalium': CategoryThresholds(  # in units of 10 ppm = 1 mg/100g
-            large_demand_max=4.0,
-            medium_demand_max=5.5,
-            small_demand_max=7.0,
-            ok_max=10.0,
-            small_surplus_max=12.5,
-            large_surplus_max=15.0
-            # >= 15.0 is Suspicious Surplus
-        ),
-        'magnesium': CategoryThresholds(  # in units of 10 ppm = 1 mg/100g
-            large_demand_max=2.0,
-            medium_demand_max=3.0,
-            small_demand_max=4.0,
-            ok_max=6.0,
-            small_surplus_max=8.0,
-            large_surplus_max=10.0
-            # >= 10.0 is Suspicious Surplus
-        )
-    }
-    
+    """Kategoriserer jordprøvers næringsstofniveauer via beregningsgrundlag.py."""
+
     CATEGORY_NAMES = [
         'Large Demand',
         'Medium Demand',
@@ -73,65 +28,64 @@ class NutrientCategorizer:
         'OK',
         'Small Surplus',
         'Large Surplus',
-        'Suspicious Surplus'
+        'Suspicious Surplus',
     ]
-    
+
     @classmethod
-    def categorize_value(cls, nutrient: str, value: Optional[float]) -> Optional[str]:
+    def categorize_value(
+        cls,
+        nutrient: str,
+        value: Optional[float],
+        jb: Optional[int] = None,
+    ) -> Optional[str]:
         """
-        Categorize a nutrient value
-        
+        Kategoriser en næringsstofværdi.
+
         Args:
-            nutrient: Name of nutrient ('rt', 'fosfor', 'kalium', 'magnesium')
-            value: Measured value
-            
+            nutrient: 'rt', 'fosfor', 'kalium' eller 'magnesium'
+            value:    Målt værdi
+            jb:       JB-nummer (1-11). Bruges kun for fosfor og kalium.
+                      Hvis None, bruges _FALLBACK_JB.
+
         Returns:
-            Category name or None if value is None
+            Kategorinavn eller None hvis value er None.
         """
         if value is None:
             return None
-            
-        if nutrient not in cls.THRESHOLDS:
-            raise ValueError(f"Unknown nutrient: {nutrient}")
-            
-        thresholds = cls.THRESHOLDS[nutrient]
-        
-        if value < thresholds.large_demand_max:
-            return 'Large Demand'
-        elif value < thresholds.medium_demand_max:
-            return 'Medium Demand'
-        elif value < thresholds.small_demand_max:
-            return 'Small Demand'
-        elif value < thresholds.ok_max:
-            return 'OK'
-        elif value < thresholds.small_surplus_max:
-            return 'Small Surplus'
-        elif value < thresholds.large_surplus_max:
-            return 'Large Surplus'
+
+        if nutrient == 'rt':
+            return kategoriser_rt(value)
+        elif nutrient == 'magnesium':
+            return kategoriser_mg(value)
+        elif nutrient == 'fosfor':
+            return kategoriser_fosfor(value, jb if jb is not None else _FALLBACK_JB)
+        elif nutrient == 'kalium':
+            return kategoriser_kalium(value, jb if jb is not None else _FALLBACK_JB)
         else:
-            return 'Suspicious Surplus'
-    
+            raise ValueError(f"Ukendt næringsstof: {nutrient}")
+
     @classmethod
     def categorize_sample(cls, sample: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Add nutrient categories to a sample
-        
+        Tilføj næringsstofkategorier til en prøve.
+
         Args:
-            sample: Parsed sample dict with 'measurements' key
-            
+            sample: Parset prøve-dict med 'measurements'-nøgle.
+                    Kan indeholde 'measurements.jb_nummer' for jordtype-afhængig kategorisering.
+
         Returns:
-            Sample dict with added 'categories' key
+            Prøve-dict med tilføjet 'categories'-nøgle.
         """
         measurements = sample.get('measurements', {})
-        
+        jb = measurements.get('jb_nummer')  # None → fallback anvendes i categorize_value
+
         categories = {
-            'rt': cls.categorize_value('rt', measurements.get('rt')),
-            'fosfor': cls.categorize_value('fosfor', measurements.get('fosfor_mg_100g')),
-            'kalium': cls.categorize_value('kalium', measurements.get('kalium_mg_100g')),
+            'rt':       cls.categorize_value('rt',       measurements.get('rt')),
+            'fosfor':   cls.categorize_value('fosfor',   measurements.get('fosfor_mg_100g'),   jb),
+            'kalium':   cls.categorize_value('kalium',   measurements.get('kalium_mg_100g'),   jb),
             'magnesium': cls.categorize_value('magnesium', measurements.get('magnesium_mg_100g')),
         }
-        
-        # Add to sample
+
         sample['categories'] = categories
         return sample
     
