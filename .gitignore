@@ -30,6 +30,9 @@ data/processed/**
 .DS_Store
 Thumbs.db
 
+# Midlertidige uploads (Flask webapp)
+tmp/
+
 # Logs
 *.log
 
