@@ -21,6 +21,38 @@
       font-size: 0.8rem;
       letter-spacing: 0.05em;
     }
+
+    /* Loading overlay */
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+    }
+    #overlay.aktiv { display: flex; }
+    #overlay .overlay-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 2rem 2.5rem;
+      text-align: center;
+      max-width: 320px;
+      width: 90%;
+    }
+    #overlay .spinner-border {
+      width: 3rem;
+      height: 3rem;
+      color: #2e7d32;
+    }
+    #overlay .trin {
+      font-size: 0.85rem;
+      color: #6c757d;
+      min-height: 1.2em;
+    }
   </style>
 </head>
 <body class="d-flex flex-column min-vh-100 justify-content-center align-items-center">
@@ -72,8 +104,41 @@
     Screening — ikke en godkendt gødningsplan. Kræver faglig validering.
   </p>
 
+  <!-- Loading overlay -->
+  <div id="overlay" role="status" aria-live="polite">
+    <div class="overlay-card shadow">
+      <div class="spinner-border mb-3" aria-hidden="true"></div>
+      <p class="fw-semibold mb-1" id="overlayTitel">Analyserer…</p>
+      <p class="trin" id="overlayTrin">Parser Excel-fil</p>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
           integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
           crossorigin="anonymous"></script>
+  <script>
+    const form     = document.querySelector('form');
+    const overlay  = document.getElementById('overlay');
+    const trinEl   = document.getElementById('overlayTrin');
+
+    const trin = [
+      [0,    'Parser Excel-fil…'],
+      [1500, 'Kategoriserer næringsstoffer…'],
+      [3000, 'Beregner kalkbehov…'],
+      [4500, 'Henter AI-anbefalinger (GPT-4o)…'],
+    ];
+
+    form.addEventListener('submit', function (e) {
+      // Valider at en fil er valgt inden vi viser overlay
+      const fil = document.getElementById('fil');
+      if (!fil.files || fil.files.length === 0) return;
+
+      overlay.classList.add('aktiv');
+
+      trin.forEach(([delay, tekst]) => {
+        setTimeout(() => { trinEl.textContent = tekst; }, delay);
+      });
+    });
+  </script>
 </body>
 </html>

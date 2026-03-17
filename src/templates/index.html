@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Gødningsscreening</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+        crossorigin="anonymous">
+  <style>
+    body { background: #f0f4f0; }
+    .navbar { background: #2e7d32 !important; }
+    .navbar-brand { color: #fff !important; font-weight: 700; }
+
+    .section-card {
+      border-top: 3px solid #2e7d32;
+    }
+
+    /* Søgeresultater */
+    #søgResultater .accordion-button:not(.collapsed) {
+      background: #e8f5e9;
+      color: #1b5e20;
+      box-shadow: none;
+    }
+    #søgResultater .accordion-button::after {
+      filter: none;
+    }
+    .mark-item {
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .mark-item:hover { background: #f1f8e9; }
+    .mark-item.valgt  { background: #e8f5e9; border-left: 3px solid #2e7d32; }
+
+    /* Sticky analyse-bar */
+    #analyseBar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #1b5e20;
+      color: #fff;
+      padding: 0.75rem 1rem;
+      z-index: 1050;
+      transform: translateY(100%);
+      transition: transform 0.2s ease;
+    }
+    #analyseBar.synlig { transform: translateY(0); }
+
+    /* Loading overlay */
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    #overlay.aktiv { display: flex; }
+    #overlay .overlay-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 2rem 2.5rem;
+      text-align: center;
+      max-width: 320px;
+      width: 90%;
+    }
+    #overlay .spinner-border { width: 3rem; height: 3rem; color: #2e7d32; }
+    #overlay .trin { font-size: .85rem; color: #6c757d; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="container">
+    <span class="navbar-brand">🌱 AI Gødningsscreening</span>
+    <span class="text-white-50 small">Danish Agro — intern screeningsværktøj</span>
+  </div>
+</nav>
+
+<div class="container py-4" style="max-width:780px; padding-bottom:5rem !important;">
+
+  <!-- Flash-beskeder -->
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in msgs %}
+      <div class="alert alert-{{ cat }} alert-dismissible fade show mt-2" role="alert">
+        {{ msg | safe }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- ================================================================
+       SØGNING
+       ================================================================ -->
+  <div class="card shadow-sm section-card mb-4">
+    <div class="card-body p-4">
+      <h5 class="fw-bold mb-3">Søg eksisterende kunde</h5>
+
+      <div class="input-group input-group-lg mb-3">
+        <span class="input-group-text bg-white">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#6c757d" viewBox="0 0 16 16">
+            <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414zm-5.242 1.1a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11"/>
+          </svg>
+        </span>
+        <input type="text" id="søgInput" class="form-control"
+               placeholder="Kundenavn…" autocomplete="off">
+        <button class="btn btn-outline-secondary" id="rydSøg" type="button"
+                style="display:none">&#x2715;</button>
+      </div>
+
+      <div id="søgResultater"></div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       UPLOAD
+       ================================================================ -->
+  <div class="card shadow-sm section-card">
+    <div class="card-header bg-white border-0 pb-0">
+      <button class="btn btn-link text-decoration-none text-dark fw-semibold p-0"
+              data-bs-toggle="collapse" data-bs-target="#uploadPanel">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#2e7d32"
+             class="me-1 mb-1" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
+          <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708z"/>
+        </svg>
+        Upload ny lab-fil
+      </button>
+    </div>
+    <div id="uploadPanel" class="collapse show">
+      <div class="card-body pt-2">
+        <form method="post" action="/upload" enctype="multipart/form-data" id="uploadForm">
+          <div class="row g-2 align-items-end">
+            <div class="col-sm-4">
+              <label class="form-label small fw-semibold">Kundenavn</label>
+              <input type="text" name="kundenavn" class="form-control"
+                     placeholder="Hans Nielsen" required>
+            </div>
+            <div class="col-sm-5">
+              <label class="form-label small fw-semibold">Excel-fil (.xlsx / .xls)</label>
+              <input type="file" name="fil" id="uploadFil" class="form-control"
+                     accept=".xlsx,.xls" required>
+            </div>
+            <div class="col-sm-3">
+              <button type="submit" class="btn btn-success w-100">Upload og gem</button>
+            </div>
+          </div>
+          <div class="form-text mt-1">
+            Filen gemmes i <code>data/kunder/&lt;kundenavn&gt;/</code> — aldrig committet.
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- Analyse-formular (checkboxes tilføjes dynamisk via JS med form="analyseForm") -->
+<form id="analyseForm" method="post" action="/analyse"></form>
+
+<!-- Sticky analyse-bar -->
+<div id="analyseBar">
+  <div class="container d-flex align-items-center gap-3" style="max-width:780px">
+    <span id="valgTekst" class="fw-semibold">0 marker valgt</span>
+    <button type="submit" form="analyseForm" class="btn btn-light btn-sm ms-auto fw-semibold">
+      Analysér valgte marker &rarr;
+    </button>
+    <button type="button" class="btn btn-outline-light btn-sm" id="rydValg">
+      Ryd
+    </button>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="overlay" role="status" aria-live="polite">
+  <div class="overlay-card shadow">
+    <div class="spinner-border mb-3" aria-hidden="true"></div>
+    <p class="fw-semibold mb-1" id="overlayTitel">Arbejder…</p>
+    <p class="trin" id="overlayTrin"></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+        crossorigin="anonymous"></script>
+<script>
+(() => {
+  const søgInput     = document.getElementById('søgInput');
+  const rydSøg       = document.getElementById('rydSøg');
+  const resultaterEl = document.getElementById('søgResultater');
+  const analyseBar   = document.getElementById('analyseBar');
+  const valgTekst    = document.getElementById('valgTekst');
+  const rydValgBtn   = document.getElementById('rydValg');
+  const uploadForm   = document.getElementById('uploadForm');
+  const analyseForm  = document.getElementById('analyseForm');
+  const overlay      = document.getElementById('overlay');
+  const overlayTitel = document.getElementById('overlayTitel');
+  const overlayTrin  = document.getElementById('overlayTrin');
+
+  // -----------------------------------------------------------------------
+  // Søgning
+  // -----------------------------------------------------------------------
+  let søgTimer = null;
+
+  søgInput.addEventListener('input', () => {
+    clearTimeout(søgTimer);
+    const q = søgInput.value.trim();
+    rydSøg.style.display = q ? '' : 'none';
+    if (!q) { resultaterEl.innerHTML = ''; return; }
+    søgTimer = setTimeout(() => søg(q), 280);
+  });
+
+  rydSøg.addEventListener('click', () => {
+    søgInput.value = '';
+    rydSøg.style.display = 'none';
+    resultaterEl.innerHTML = '';
+    rydValg();
+  });
+
+  async function søg(q) {
+    resultaterEl.innerHTML = '<p class="text-muted small ps-1 mt-2">Søger…</p>';
+    try {
+      const resp = await fetch(`/api/kunder?q=${encodeURIComponent(q)}`);
+      const kunder = await resp.json();
+      renderKunder(kunder);
+    } catch {
+      resultaterEl.innerHTML = '<p class="text-danger small">Søgning fejlede.</p>';
+    }
+  }
+
+  function renderKunder(kunder) {
+    if (!kunder.length) {
+      resultaterEl.innerHTML = '<p class="text-muted small ps-1 mt-2">Ingen kunder fundet.</p>';
+      return;
+    }
+
+    const acc = document.createElement('div');
+    acc.className = 'accordion mt-2';
+    acc.id = 'kundeAccordion';
+
+    kunder.forEach((kunde, ki) => {
+      const panelId = `panel-${ki}`;
+      const item    = document.createElement('div');
+      item.className = 'accordion-item';
+      item.innerHTML = `
+        <h2 class="accordion-header">
+          <button class="accordion-button ${kunder.length > 1 ? 'collapsed' : ''}"
+                  type="button" data-bs-toggle="collapse"
+                  data-bs-target="#${panelId}">
+            <strong>${escHtml(kunde.navn)}</strong>
+            <span class="badge bg-success ms-2">${kunde.samples.length} mark${kunde.samples.length !== 1 ? 'er' : ''}</span>
+          </button>
+        </h2>
+        <div id="${panelId}" class="accordion-collapse collapse ${kunder.length === 1 ? 'show' : ''}">
+          <div class="accordion-body p-2">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+              <small class="text-muted">Klik en mark for at vælge den til analyse</small>
+              <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-success btn-sm"
+                        onclick="vælgAlle('${escHtml(kunde.mappe)}')">Vælg alle</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        onclick="fravælgAlle('${escHtml(kunde.mappe)}')">Ryd</button>
+              </div>
+            </div>
+            <div class="list-group list-group-flush" id="liste-${escHtml(kunde.mappe)}">
+              ${kunde.samples.map(s => renderMarkItem(kunde.mappe, s)).join('')}
+            </div>
+          </div>
+        </div>`;
+      acc.appendChild(item);
+    });
+
+    resultaterEl.innerHTML = '';
+    resultaterEl.appendChild(acc);
+  }
+
+  function renderMarkItem(mappe, s) {
+    const cbId  = `cb-${s._id}`;
+    const val   = `${mappe}/${s._id}`;
+    const dato  = formatDato(s._uploaded);
+    const mark  = escHtml(s.marknummer || '—');
+    const fid   = s.field_id ? `<span class="text-muted"> · ${escHtml(s.field_id)}</span>` : '';
+    const anr   = s.analyse_nr ? `Analyse nr. ${s.analyse_nr} · ` : '';
+    return `
+      <label class="list-group-item mark-item d-flex gap-3 align-items-start py-2"
+             for="${cbId}" data-mappe="${escHtml(mappe)}">
+        <input class="form-check-input mt-1 mark-cb flex-shrink-0"
+               type="checkbox" id="${cbId}"
+               name="ids" value="${val}" form="analyseForm"
+               onchange="opdaterValg()">
+        <div>
+          <strong>Mark ${mark}</strong>${fid}
+          <br><small class="text-muted">${anr}Uploadet ${dato}</small>
+        </div>
+      </label>`;
+  }
+
+  // -----------------------------------------------------------------------
+  // Valg-styring
+  // -----------------------------------------------------------------------
+  window.opdaterValg = function opdaterValg() {
+    const alle = document.querySelectorAll('.mark-cb');
+    let n = 0;
+    alle.forEach(cb => {
+      const item = cb.closest('.mark-item');
+      if (cb.checked) { n++; item.classList.add('valgt'); }
+      else             { item.classList.remove('valgt'); }
+    });
+    valgTekst.textContent = `${n} mark${n !== 1 ? 'er' : ''} valgt`;
+    analyseBar.classList.toggle('synlig', n > 0);
+  }
+
+  window.vælgAlle = function(mappe) {
+    document.querySelectorAll(`[data-mappe="${mappe}"] .mark-cb`).forEach(cb => {
+      cb.checked = true;
+    });
+    opdaterValg();
+  };
+
+  window.fravælgAlle = function(mappe) {
+    document.querySelectorAll(`[data-mappe="${mappe}"] .mark-cb`).forEach(cb => {
+      cb.checked = false;
+    });
+    opdaterValg();
+  };
+
+  function rydValg() {
+    document.querySelectorAll('.mark-cb').forEach(cb => { cb.checked = false; });
+    opdaterValg();
+  }
+
+  rydValgBtn.addEventListener('click', rydValg);
+
+  // -----------------------------------------------------------------------
+  // Loading overlay
+  // -----------------------------------------------------------------------
+  const uploadTrin = [
+    [0,    'Uploader Excel-fil…'],
+    [1000, 'Parser prøvedata…'],
+    [2500, 'Gemmer marker…'],
+  ];
+  const analyseTrin = [
+    [0,    'Henter marker fra disk…'],
+    [1200, 'Beregner næringsstofkategorier…'],
+    [2800, 'Beregner kalkbehov…'],
+    [4200, 'Henter AI-anbefalinger (GPT-4o)…'],
+  ];
+
+  function visOverlay(titel, trin) {
+    overlayTitel.textContent = titel;
+    overlayTrin.textContent  = trin[0][1];
+    overlay.classList.add('aktiv');
+    trin.slice(1).forEach(([delay, tekst]) => {
+      setTimeout(() => { overlayTrin.textContent = tekst; }, delay);
+    });
+  }
+
+  uploadForm.addEventListener('submit', () => {
+    const fil = document.getElementById('uploadFil');
+    if (fil.files && fil.files.length > 0) {
+      visOverlay('Uploader og gemmer…', uploadTrin);
+    }
+  });
+
+  analyseForm.addEventListener('submit', () => {
+    const valgte = document.querySelectorAll('.mark-cb:checked');
+    if (valgte.length > 0) {
+      visOverlay('Analyserer marker…', analyseTrin);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Hjælpefunktioner
+  // -----------------------------------------------------------------------
+  function escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  const MÅNEDER = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  function formatDato(iso) {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      return `${d.getDate()}. ${MÅNEDER[d.getMonth()]} ${d.getFullYear()}`;
+    } catch { return iso.slice(0,10); }
+  }
+
+  // -----------------------------------------------------------------------
+  // Auto-søg ved side-load (efter upload-redirect)
+  // -----------------------------------------------------------------------
+  const initialQ = {{ q | tojson }};
+  if (initialQ) {
+    søgInput.value = initialQ;
+    rydSøg.style.display = '';
+    søg(initialQ);
+  }
+})();
+</script>
+</body>
+</html>

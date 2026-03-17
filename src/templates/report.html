@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Screeningsrapport &mdash; AI Gødningsscreening</title>
+  <title>Screeningsrapport — {{ kundenavn }}</title>
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
@@ -19,9 +19,21 @@
       border-bottom: 1px solid #dee2e6;
     }
 
+    .sort-bar {
+      background: #fff;
+      border-bottom: 1px solid #dee2e6;
+    }
+    .sort-bar .btn-group .btn { font-size: .82rem; }
+    .sort-bar .btn.active {
+      background: #2e7d32;
+      border-color: #2e7d32;
+      color: #fff;
+    }
+    .sort-dir-btn { min-width: 2.2rem; }
+
     .field-card {
       border-left: 4px solid #2e7d32;
-      transition: box-shadow 0.15s;
+      transition: box-shadow .15s;
     }
     .field-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
     .field-card .card-header {
@@ -29,15 +41,13 @@
       border-bottom: 1px solid #e9ecef;
     }
 
-    .badge-pill { font-size: 0.8rem; padding: 0.35em 0.65em; }
+    .badge-pill { font-size: .8rem; padding: .35em .65em; }
 
-    /* Nutrient tabel */
     .nutrient-table td, .nutrient-table th {
       vertical-align: middle;
-      font-size: 0.9rem;
+      font-size: .9rem;
     }
 
-    /* Kalkbehov-sektion */
     .kalk-section {
       background: #fff8e1;
       border-left: 3px solid #f9a825;
@@ -48,66 +58,110 @@
       border-left-color: #558b2f;
     }
 
-    /* AI-anbefaling */
     .ai-box {
       background: #e8f5e9;
       border-left: 3px solid #2e7d32;
       border-radius: 4px;
       font-style: italic;
-      font-size: 0.95rem;
+      font-size: .95rem;
     }
     .ai-box .ai-label {
       font-style: normal;
-      font-size: 0.75rem;
+      font-size: .75rem;
       font-weight: 600;
       color: #2e7d32;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: .05em;
     }
 
-    .priority-badge {
-      font-size: 0.75rem;
-    }
+    .priority-badge { font-size: .75rem; }
+    .disclaimer { font-size: .8rem; color: #6c757d; }
 
-    .disclaimer {
-      font-size: 0.8rem;
-      color: #6c757d;
+    /* ----------------------------------------------------------------
+       Print / PDF
+    ---------------------------------------------------------------- */
+    .print-header { display: none; }
+
+    @media print {
+      body { background: #fff !important; }
+
+      /* Skjul alt der ikke er rapport-indhold */
+      .navbar, .summary-bar, .sort-bar,
+      .no-print, .disclaimer { display: none !important; }
+
+      /* Vis print-header */
+      .print-header {
+        display: block !important;
+        padding-bottom: .75rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid #2e7d32;
+      }
+
+      /* Hvert kort på sin side (undgå side-brud midt i et kort) */
+      .field-wrapper { break-inside: avoid; page-break-inside: avoid; }
+      .field-card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+
+      .container { max-width: 100% !important; padding: 0 !important; }
+      .row.g-4  { --bs-gutter-x: 0; --bs-gutter-y: 1rem; }
+
+      /* Fjern hover-effekter */
+      .field-card:hover { box-shadow: none !important; }
+
+      a, a:visited { text-decoration: none; color: inherit; }
     }
   </style>
 </head>
 <body>
 
-<!-- Navbar -->
+<!-- Navbar (skjult ved print) -->
 <nav class="navbar navbar-expand-lg">
   <div class="container">
     <span class="navbar-brand fw-bold">🌱 AI Gødningsscreening</span>
-    <div class="ms-auto">
-      <a class="nav-link d-inline" href="/">&#8592; Upload ny fil</a>
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-outline-light btn-sm no-print" onclick="window.print()">
+        &#128438; Gem som PDF
+      </button>
+      <a class="nav-link d-inline no-print" href="/">&#8592; Tilbage</a>
     </div>
   </div>
 </nav>
 
-<!-- Summary bar -->
-<div class="summary-bar py-2 mb-4">
+<!-- Summary bar (skjult ved print) -->
+<div class="summary-bar py-2 mb-0">
   <div class="container d-flex flex-wrap gap-3 align-items-center">
-    <span class="text-muted small">
-      <strong>{{ filnavn }}</strong>
-    </span>
-    <span class="badge bg-success rounded-pill">{{ samples|length }} marker</span>
+    <span class="fw-semibold">{{ kundenavn }}</span>
+    <span class="badge bg-success rounded-pill">{{ samples|length }} mark{{ 'er' if samples|length != 1 }}</span>
     {% if kalk_count > 0 %}
-      <span class="badge bg-warning text-dark rounded-pill">
-        {{ kalk_count }} med kalkbehov
-      </span>
+      <span class="badge bg-warning text-dark rounded-pill">{{ kalk_count }} med kalkbehov</span>
     {% endif %}
     {% if not ai_aktiv %}
-      <span class="badge bg-secondary rounded-pill" title="Sæt OPENAI_API_KEY i .env">
-        AI-anbefalinger deaktiveret
-      </span>
+      <span class="badge bg-secondary rounded-pill">AI-anbefalinger deaktiveret</span>
     {% endif %}
-    <span class="disclaimer ms-auto">
-      Screening — kræver faglig validering
-    </span>
+    <span class="disclaimer ms-auto">{{ dato }} · Screening — kræver faglig validering</span>
   </div>
+</div>
+
+<!-- Sorteringsbar (skjult ved print) -->
+<div class="sort-bar py-2 mb-4 no-print">
+  <div class="container d-flex flex-wrap align-items-center gap-2">
+    <span class="text-muted small fw-semibold me-1">Sortér efter:</span>
+    <div class="btn-group btn-group-sm" id="sortBtns">
+      <button class="btn btn-outline-secondary active" data-sort="prioritet" data-num="1">Prioritet</button>
+      <button class="btn btn-outline-secondary" data-sort="marknummer" data-num="0">Marknummer</button>
+      <button class="btn btn-outline-secondary" data-sort="rt"         data-num="1">Rt</button>
+      <button class="btn btn-outline-secondary" data-sort="fosfor"     data-num="1">Fosfor</button>
+      <button class="btn btn-outline-secondary" data-sort="kalium"     data-num="1">Kalium</button>
+      <button class="btn btn-outline-secondary" data-sort="magnesium"  data-num="1">Magnesium</button>
+      <button class="btn btn-outline-secondary" data-sort="kalk"       data-num="1">Kalkbehov</button>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary sort-dir-btn" id="sortDirBtn" title="Skift retning">&#8595;</button>
+  </div>
+</div>
+
+<!-- Print-header (kun synlig ved print) -->
+<div class="print-header container">
+  <h1 class="h4 mb-0">AI Gødningsscreening — {{ kundenavn }}</h1>
+  <p class="text-muted mb-0 small">{{ dato }} · {{ samples|length }} mark{{ 'er' if samples|length != 1 }} · Screening, ikke en godkendt gødningsplan</p>
 </div>
 
 <!-- Marker -->
@@ -121,7 +175,15 @@
       {% set anbefaling = anbefalinger[loop.index0] %}
       {% set score = sample.get('priority_score', 0) %}
 
-      <div class="col-12">
+      <div class="col-12 field-wrapper"
+           data-prioritet="{{ score }}"
+           data-marknummer="{{ meta.get('marknummer') or '' }}"
+           data-rt="{{ m.get('rt') if m.get('rt') is not none else '' }}"
+           data-fosfor="{{ m.get('fosfor_mg_100g') if m.get('fosfor_mg_100g') is not none else '' }}"
+           data-kalium="{{ m.get('kalium_mg_100g') if m.get('kalium_mg_100g') is not none else '' }}"
+           data-magnesium="{{ m.get('magnesium_mg_100g') if m.get('magnesium_mg_100g') is not none else '' }}"
+           data-kalk="{{ kalk.get('kalk_ton_per_ha', 0) if kalk else 0 }}">
+
         <div class="card field-card shadow-sm">
 
           <!-- Card header -->
@@ -132,15 +194,11 @@
                 <small class="text-muted fw-normal">({{ meta['field_id'] }})</small>
               {% endif %}
             </h5>
-
             <span class="badge bg-{{ score | prioritet_farve }} priority-badge ms-auto">
               Prioritet {{ score }}
             </span>
-
             {% if m.get('jb_nummer') %}
-              <span class="badge bg-light text-dark border priority-badge">
-                JB{{ m['jb_nummer'] }}
-              </span>
+              <span class="badge bg-light text-dark border priority-badge">JB{{ m['jb_nummer'] }}</span>
             {% endif %}
           </div>
 
@@ -151,69 +209,28 @@
             <div class="table-responsive mb-3">
               <table class="table table-sm table-bordered nutrient-table mb-0">
                 <thead class="table-light">
-                  <tr>
-                    <th>Parameter</th>
-                    <th>Målt</th>
-                    <th>Kategori</th>
-                  </tr>
+                  <tr><th>Parameter</th><th>Målt</th><th>Kategori</th></tr>
                 </thead>
                 <tbody>
+                  {% for param, key, unit in [
+                      ('Reaktionstal (Rt)', 'rt',            ''),
+                      ('Fosfor (P)',        'fosfor_mg_100g','mg/100g'),
+                      ('Kalium (K)',        'kalium_mg_100g','mg/100g'),
+                      ('Magnesium (Mg)',    'magnesium_mg_100g','mg/100g'),
+                  ] %}
                   <tr>
-                    <td>Reaktionstal (Rt)</td>
-                    <td>{{ m.get('rt') | fmt(2) }}</td>
+                    <td>{{ param }}{% if unit %} <small class="text-muted">{{ unit }}</small>{% endif %}</td>
+                    <td>{{ m.get(key) | fmt(2 if key == 'rt' else 1) }}</td>
                     <td>
-                      {% set k = cats.get('rt') %}
+                      {% set k = cats.get(key.split('_')[0]) %}
                       {% if k %}
-                        <span class="badge bg-{{ k | badge_farve }} badge-pill">
-                          {{ k | kategori_dk }}
-                        </span>
+                        <span class="badge bg-{{ k | badge_farve }} badge-pill">{{ k | kategori_dk }}</span>
                       {% else %}
                         <span class="text-muted">—</span>
                       {% endif %}
                     </td>
                   </tr>
-                  <tr>
-                    <td>Fosfor (P) <small class="text-muted">mg/100g</small></td>
-                    <td>{{ m.get('fosfor_mg_100g') | fmt(1) }}</td>
-                    <td>
-                      {% set k = cats.get('fosfor') %}
-                      {% if k %}
-                        <span class="badge bg-{{ k | badge_farve }} badge-pill">
-                          {{ k | kategori_dk }}
-                        </span>
-                      {% else %}
-                        <span class="text-muted">—</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Kalium (K) <small class="text-muted">mg/100g</small></td>
-                    <td>{{ m.get('kalium_mg_100g') | fmt(1) }}</td>
-                    <td>
-                      {% set k = cats.get('kalium') %}
-                      {% if k %}
-                        <span class="badge bg-{{ k | badge_farve }} badge-pill">
-                          {{ k | kategori_dk }}
-                        </span>
-                      {% else %}
-                        <span class="text-muted">—</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Magnesium (Mg) <small class="text-muted">mg/100g</small></td>
-                    <td>{{ m.get('magnesium_mg_100g') | fmt(1) }}</td>
-                    <td>
-                      {% set k = cats.get('magnesium') %}
-                      {% if k %}
-                        <span class="badge bg-{{ k | badge_farve }} badge-pill">
-                          {{ k | kategori_dk }}
-                        </span>
-                      {% else %}
-                        <span class="text-muted">—</span>
-                      {% endif %}
-                    </td>
-                  </tr>
+                  {% endfor %}
                 </tbody>
               </table>
             </div>
@@ -221,22 +238,14 @@
             <!-- Kalkbehov -->
             {% if kalk %}
               {% set kalk_ton = kalk.get('kalk_ton_per_ha', 0) %}
-              <div class="kalk-section {{ 'ingen-kalk' if kalk_ton == 0 else '' }} p-3 mb-3">
+              <div class="kalk-section {{ 'ingen-kalk' if kalk_ton == 0 }} p-3 mb-3">
                 <div class="row g-2 align-items-center">
-                  <div class="col-auto">
-                    <strong>Kalk</strong>
-                  </div>
+                  <div class="col-auto"><strong>Kalk</strong></div>
                   <div class="col">
-                    <span class="me-3">
-                      Målt Rt: <strong>{{ kalk.get('maalt_rt') | fmt(2) }}</strong>
-                    </span>
-                    <span class="me-3">
-                      Ønsket Rt: <strong>{{ kalk.get('oensket_rt') | fmt(2) }}</strong>
-                    </span>
+                    <span class="me-3">Målt Rt: <strong>{{ kalk.get('maalt_rt') | fmt(2) }}</strong></span>
+                    <span class="me-3">Ønsket Rt: <strong>{{ kalk.get('oensket_rt') | fmt(2) }}</strong></span>
                     {% if kalk_ton > 0 %}
-                      <span class="badge bg-warning text-dark">
-                        {{ kalk.get('kalk_ton_per_ha') | fmt(1) }} t CaCO₃/ha
-                      </span>
+                      <span class="badge bg-warning text-dark">{{ kalk.get('kalk_ton_per_ha') | fmt(1) }} t CaCO₃/ha</span>
                     {% else %}
                       <span class="badge bg-success">Intet kalkbehov</span>
                     {% endif %}
@@ -253,14 +262,14 @@
               </div>
             {% endif %}
 
-          </div>{# /card-body #}
-        </div>{# /card #}
+          </div><!-- /card-body -->
+        </div><!-- /card -->
       </div>
     {% endfor %}
-  </div>{# /row #}
+  </div><!-- /row -->
 
-  <p class="text-center disclaimer mt-5">
-    Screening genereret af AI Gødningsscreening &mdash; Danish Agro intern POC &mdash;
+  <p class="text-center disclaimer mt-5 no-print">
+    Screening genereret af AI Gødningsscreening — Danish Agro intern POC —
     ikke en juridisk godkendt gødningsplan. Kræver faglig validering.
   </p>
 </div>
@@ -268,5 +277,66 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
         crossorigin="anonymous"></script>
+<script>
+/* Klient-side sortering */
+(function () {
+  const grid     = document.querySelector('.row.g-4');
+  const sortBtns = document.querySelectorAll('#sortBtns .btn');
+  const dirBtn   = document.getElementById('sortDirBtn');
+
+  let currentSort = 'prioritet';
+  let ascending   = false;
+
+  function valueOf(el, key, isNum) {
+    const raw = el.dataset[key];
+    if (isNum) {
+      const n = parseFloat(raw);
+      return isNaN(n) ? (ascending ? Infinity : -Infinity) : n;
+    }
+    return (raw || '').toLowerCase();
+  }
+
+  function sort() {
+    const isNum    = currentSort !== 'marknummer';
+    const wrappers = [...grid.querySelectorAll('.field-wrapper')];
+    wrappers.sort((a, b) => {
+      const va = valueOf(a, currentSort, isNum);
+      const vb = valueOf(b, currentSort, isNum);
+      if (va < vb) return ascending ? -1 : 1;
+      if (va > vb) return ascending ? 1 : -1;
+      return 0;
+    });
+    wrappers.forEach(el => grid.appendChild(el));
+  }
+
+  function updateDirBtn() {
+    dirBtn.textContent = ascending ? '\u2191' : '\u2193';
+    dirBtn.title = ascending ? 'Laveste øverst' : 'Højeste øverst';
+  }
+
+  sortBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.sort === currentSort) {
+        ascending = !ascending;
+      } else {
+        currentSort = btn.dataset.sort;
+        ascending   = btn.dataset.num === '0';
+      }
+      sortBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      updateDirBtn();
+      sort();
+    });
+  });
+
+  dirBtn.addEventListener('click', () => {
+    ascending = !ascending;
+    updateDirBtn();
+    sort();
+  });
+
+  updateDirBtn();
+})();
+</script>
 </body>
 </html>

@@ -33,6 +33,9 @@ Thumbs.db
 # Midlertidige uploads (Flask webapp)
 tmp/
 
+# Kundedata — må IKKE committes
+data/kunder/
+
 # Logs
 *.log
 
