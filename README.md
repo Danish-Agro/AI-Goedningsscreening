@@ -21,3 +21,5 @@ python src/parsers/soiloptix_parser.py data/raw/example.xlsx
 - **Fase:** Proof-of-Concept
 - **Deadline:** 31. marts 2026
 - **Stakeholder:** Christian (Direktør planteavl)
+
+Første forsøg på render
