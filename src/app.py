@@ -208,7 +208,8 @@ def get_ai_recommendations(samples: list) -> list:
         kalk = s.get("kalkbehov", {})
         fields.append({
             "index":            i,
-            "marknummer":       meta.get("marknummer") or f"Mark {i+1}",
+            "marknummer":       meta.get("marknummer") or f"Ukendt",
+            "analyse_nr":       meta.get("analyse_nr"),
             "jb_nummer":        m.get("jb_nummer"),
             "rt_maal":          m.get("rt"),
             "rt_kategori":      cats.get("rt"),
@@ -227,7 +228,9 @@ def get_ai_recommendations(samples: list) -> list:
         "Skriv en kort screeeningsanbefaling på dansk for hver mark — max 3 sætninger. "
         "Fokuser på hvilke næringsstoffer der bør undersøges nærmere og om kalk er relevant. "
         "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
-        f'Svar som JSON: {{"anbefalinger": ["tekst mark 0", ..., "tekst mark {len(fields)-1}"]}}'
+        "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler en mark. "
+        "Hvis flere prøver har samme marknummer, skelnes de med prøvenummer (analyse_nr). "
+        f'Svar som JSON: {{"anbefalinger": ["tekst for index 0", ..., "tekst for index {len(fields)-1}"]}}'
     )
     user = (
         f"Jordanalysedata for {len(fields)} mark(er):\n\n"
