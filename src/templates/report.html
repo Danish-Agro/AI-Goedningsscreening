@@ -270,6 +270,9 @@
                 <small class="text-muted fw-normal">({{ meta['field_id'] }})</small>
               {% endif %}
             </h5>
+            {% if meta.get('analyse_nr') %}
+              <small class="text-muted">Prøve&nbsp;{{ meta['analyse_nr'] }}</small>
+            {% endif %}
             <span class="badge bg-{{ score | prioritet_farve }} priority-badge ms-auto">
               Prioritet {{ score }}
             </span>
