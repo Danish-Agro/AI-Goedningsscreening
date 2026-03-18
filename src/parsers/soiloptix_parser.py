@@ -60,9 +60,16 @@ class SoilOptixParser:
         # Get metadata rows
         kundenr = self.df.iloc[self.ROW_KUNDENR, 1]
         
-        # Find the first data column (column 3 typically)
-        first_data_col = 3
-        
+        # Find the first data column by scanning for the first non-empty ordrenummer
+        # (typically col 3 or 4 depending on the file variant)
+        first_data_col = None
+        for col_idx in range(2, min(8, len(self.df.columns))):
+            if not pd.isna(self.df.iloc[self.ROW_ORDRENUMMER, col_idx]):
+                first_data_col = col_idx
+                break
+        if first_data_col is None:
+            return []
+
         # Iterate through each sample column
         for col_idx in range(first_data_col, len(self.df.columns)):
             # Check if this column has data (ordrenummer should be present)

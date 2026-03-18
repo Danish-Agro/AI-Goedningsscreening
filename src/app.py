@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from parsers.soiloptix_parser import SoilOptixParser
+from parsers.format_detector import detect_and_create_parser, FormatNotRecognizedError
 from analysis.nutrient_categorizer import NutrientCategorizer
 from analysis.beregningsgrundlag import beregn_kalkbehov, beregn_jb_nummer
 from ai.assistant import FertilizerAssistant
@@ -358,9 +359,11 @@ def upload():
     fil.save(tmp_path)
 
     try:
-        parser = SoilOptixParser(str(tmp_path))
-        parser.load()
+        parser = detect_and_create_parser(str(tmp_path))
         samples = parser.parse()
+    except FormatNotRecognizedError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("index"))
     except Exception as exc:
         flash(f"Kunne ikke parse Excel-filen: {exc}", "danger")
         return redirect(url_for("index"))

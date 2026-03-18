@@ -206,6 +206,40 @@
   <p class="text-muted mb-0 small">{{ dato }} · {{ samples|length }} mark{{ 'er' if samples|length != 1 }} · Screening, ikke en godkendt gødningsplan</p>
 </div>
 
+<!-- Chat -->
+{% if ai_aktiv %}
+<div class="container mb-4 no-print">
+  <div class="card chat-card shadow-sm"
+       data-mappe="{{ kundenavn_mappe }}">
+    <div class="card-body p-4">
+      <h6 class="fw-bold text-success mb-3">
+        Spørg om markerne
+        <small class="fw-normal text-muted">— stil spørgsmål om de analyserede marker</small>
+      </h6>
+
+      <div class="chat-log mb-3" id="chatLog">
+        <div class="chat-bubble assistant">
+          Hej! Stil mig spørgsmål om de {{ samples|length }} analyserede
+          mark{{ 'er' if samples|length != 1 }}. Fx: "Hvilken mark har størst
+          behov for fosfor?" eller "Prioriter de 5 marker".
+        </div>
+      </div>
+
+      <div class="input-group">
+        <input type="text" id="chatInput" class="form-control"
+               placeholder="Skriv et spørgsmål…" autocomplete="off">
+        <button class="btn btn-success" id="chatSend" type="button">
+          Send
+        </button>
+      </div>
+      <div class="form-text mt-1">
+        Screening — ikke en godkendt gødningsplan. Kræver faglig validering.
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Marker -->
 <div class="container pb-5">
   <div class="row g-4">
@@ -309,38 +343,6 @@
       </div>
     {% endfor %}
   </div><!-- /row -->
-
-  <!-- Chat -->
-  {% if ai_aktiv %}
-  <div class="card chat-card shadow-sm mt-5 mb-3 no-print"
-       data-mappe="{{ kundenavn_mappe }}">
-    <div class="card-body p-4">
-      <h6 class="fw-bold text-success mb-3">
-        Spørg om markerne
-        <small class="fw-normal text-muted">— stil spørgsmål om de analyserede marker</small>
-      </h6>
-
-      <div class="chat-log mb-3" id="chatLog">
-        <div class="chat-bubble assistant">
-          Hej! Stil mig spørgsmål om de {{ samples|length }} analyserede
-          mark{{ 'er' if samples|length != 1 }}. Fx: "Hvilken mark har størst
-          behov for fosfor?" eller "Prioriter de 5 marker".
-        </div>
-      </div>
-
-      <div class="input-group">
-        <input type="text" id="chatInput" class="form-control"
-               placeholder="Skriv et spørgsmål…" autocomplete="off">
-        <button class="btn btn-success" id="chatSend" type="button">
-          Send
-        </button>
-      </div>
-      <div class="form-text mt-1">
-        Screening — ikke en godkendt gødningsplan. Kræver faglig validering.
-      </div>
-    </div>
-  </div>
-  {% endif %}
 
   <p class="text-center disclaimer mt-3 no-print">
     Screening genereret af AI Gødningsscreening — Danish Agro intern POC —
