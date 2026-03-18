@@ -99,8 +99,11 @@ class SoilOptixParser:
             measurements = {}
             for param_idx, param_name in enumerate(self.PARAMETERS):
                 row_idx = self.ROW_DATA_START + param_idx
+                if row_idx >= len(self.df):
+                    measurements[param_name] = None
+                    continue
                 value = self.df.iloc[row_idx, col_idx]
-                
+
                 # Convert to float if possible, keep as-is otherwise
                 if not pd.isna(value):
                     try:
