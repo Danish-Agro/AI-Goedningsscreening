@@ -18,7 +18,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from flask import Flask, jsonify, render_template, request, flash, redirect, url_for
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AzureOpenAI
 
 from parsers.soiloptix_parser import SoilOptixParser
 from parsers.format_detector import detect_and_create_parser, FormatNotRecognizedError
@@ -44,9 +44,17 @@ UPLOAD_TMP.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 
+_azure_endpoint   = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
+_azure_key        = os.getenv("AZURE_OPENAI_KEY", "").strip()
+AZURE_DEPLOYMENT  = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o").strip()
+
 openai_client = (
-    OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    if os.getenv("OPENAI_API_KEY")
+    AzureOpenAI(
+        azure_endpoint=_azure_endpoint,
+        api_key=_azure_key,
+        api_version="2025-01-01-preview",
+    )
+    if _azure_endpoint and _azure_key
     else None
 )
 
@@ -189,8 +197,15 @@ def enrich_sample(sample: dict) -> dict:
 
 def process_samples(samples: list) -> list:
     for s in samples:
-        enrich_sample(s)
-        NutrientCategorizer.categorize_sample(s)
+        try:
+            enrich_sample(s)
+        except Exception as exc:
+            app.logger.warning("enrich_sample fejlede for prøve %s: %s",
+                               s.get("metadata", {}).get("analyse_nr"), exc)
+        try:
+            NutrientCategorizer.categorize_sample(s)
+        except Exception as exc:
+            app.logger.warning("categorize_sample fejlede: %s", exc)
         s["priority_score"] = NutrientCategorizer.get_field_priority(s)
     samples.sort(key=lambda s: s.get("priority_score", 0), reverse=True)
     return samples
@@ -238,18 +253,21 @@ def get_ai_recommendations(samples: list) -> list:
     )
 
     try:
+        max_tok = min(300 * len(fields) + 500, 8000)
         resp = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model=AZURE_DEPLOYMENT,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": user},
             ],
             temperature=0.3,
-            max_tokens=3000,
+            max_tokens=max_tok,
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content or "{}")
         anbefalinger = data.get("anbefalinger", [])
+        if not isinstance(anbefalinger, list):
+            anbefalinger = []
     except Exception as exc:
         app.logger.warning("GPT-4o fejlede: %s", exc)
         anbefalinger = []
@@ -426,7 +444,13 @@ def analyse():
         flash("Kunne ikke finde de valgte marker.", "danger")
         return redirect(url_for("index"))
 
-    samples = process_samples(samples)
+    try:
+        samples = process_samples(samples)
+    except Exception as exc:
+        app.logger.error("process_samples fejlede: %s", exc, exc_info=True)
+        flash(f"Fejl ved behandling af prøver: {exc}", "danger")
+        return redirect(url_for("index"))
+
     anbefalinger = get_ai_recommendations(samples)
 
     kalk_count = sum(

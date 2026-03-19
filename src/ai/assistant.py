@@ -10,9 +10,13 @@ import re
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AzureOpenAI
 
 load_dotenv()
+
+_AZURE_ENDPOINT    = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
+_AZURE_KEY         = os.getenv("AZURE_OPENAI_KEY", "").strip()
+AZURE_DEPLOYMENT   = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o").strip()
 
 ALLOWED_CATEGORIES = [
     "Large Demand",
@@ -322,8 +326,15 @@ class FertilizerAssistant:
     """AI assistant that routes data questions to deterministic handlers."""
 
     def __init__(self, samples_file: str):
-        api_key = os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=api_key) if api_key else None
+        self.client = (
+            AzureOpenAI(
+                azure_endpoint=_AZURE_ENDPOINT,
+                api_key=_AZURE_KEY,
+                api_version="2025-01-01-preview",
+            )
+            if _AZURE_ENDPOINT and _AZURE_KEY
+            else None
+        )
         with open(samples_file, "r", encoding="utf-8") as f:
             self.samples = json.load(f)
         print(f"Loaded {len(self.samples)} soil samples")
@@ -332,8 +343,15 @@ class FertilizerAssistant:
     def from_samples(cls, samples: List[Dict[str, Any]], api_key: Optional[str] = None) -> "FertilizerAssistant":
         """Opret assistent direkte fra en liste af (allerede berigede) samples."""
         obj = object.__new__(cls)
-        key = api_key or os.getenv("OPENAI_API_KEY")
-        obj.client = OpenAI(api_key=key) if key else None
+        obj.client = (
+            AzureOpenAI(
+                azure_endpoint=_AZURE_ENDPOINT,
+                api_key=_AZURE_KEY,
+                api_version="2025-01-01-preview",
+            )
+            if _AZURE_ENDPOINT and _AZURE_KEY
+            else None
+        )
         obj.samples = samples
         return obj
 
@@ -410,7 +428,7 @@ class FertilizerAssistant:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=AZURE_DEPLOYMENT,
                 messages=messages,
                 temperature=0.0,
                 max_tokens=500,
