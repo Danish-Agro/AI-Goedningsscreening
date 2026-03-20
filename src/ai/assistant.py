@@ -10,13 +10,26 @@ import re
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 
 load_dotenv()
 
 _AZURE_ENDPOINT    = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
 _AZURE_KEY         = os.getenv("AZURE_OPENAI_KEY", "").strip()
+_OPENAI_KEY        = os.getenv("OPENAI_API_KEY", "").strip()
 AZURE_DEPLOYMENT   = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o").strip()
+
+
+def _build_client():
+    if _AZURE_ENDPOINT and _AZURE_KEY:
+        return AzureOpenAI(
+            azure_endpoint=_AZURE_ENDPOINT,
+            api_key=_AZURE_KEY,
+            api_version="2025-01-01-preview",
+        )
+    if _OPENAI_KEY:
+        return OpenAI(api_key=_OPENAI_KEY)
+    return None
 
 ALLOWED_CATEGORIES = [
     "Large Demand",
@@ -326,15 +339,7 @@ class FertilizerAssistant:
     """AI assistant that routes data questions to deterministic handlers."""
 
     def __init__(self, samples_file: str):
-        self.client = (
-            AzureOpenAI(
-                azure_endpoint=_AZURE_ENDPOINT,
-                api_key=_AZURE_KEY,
-                api_version="2025-01-01-preview",
-            )
-            if _AZURE_ENDPOINT and _AZURE_KEY
-            else None
-        )
+        self.client = _build_client()
         with open(samples_file, "r", encoding="utf-8") as f:
             self.samples = json.load(f)
         print(f"Loaded {len(self.samples)} soil samples")
@@ -343,15 +348,7 @@ class FertilizerAssistant:
     def from_samples(cls, samples: List[Dict[str, Any]], api_key: Optional[str] = None) -> "FertilizerAssistant":
         """Opret assistent direkte fra en liste af (allerede berigede) samples."""
         obj = object.__new__(cls)
-        obj.client = (
-            AzureOpenAI(
-                azure_endpoint=_AZURE_ENDPOINT,
-                api_key=_AZURE_KEY,
-                api_version="2025-01-01-preview",
-            )
-            if _AZURE_ENDPOINT and _AZURE_KEY
-            else None
-        )
+        obj.client = _build_client()
         obj.samples = samples
         return obj
 

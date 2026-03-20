@@ -18,7 +18,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from flask import Flask, jsonify, render_template, request, flash, redirect, url_for
 from dotenv import load_dotenv
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 
 from parsers.soiloptix_parser import SoilOptixParser
 from parsers.format_detector import detect_and_create_parser, FormatNotRecognizedError
@@ -46,17 +46,19 @@ ALLOWED_EXTENSIONS = {".xlsx", ".xls"}
 
 _azure_endpoint   = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
 _azure_key        = os.getenv("AZURE_OPENAI_KEY", "").strip()
+_openai_key       = os.getenv("OPENAI_API_KEY", "").strip()
 AZURE_DEPLOYMENT  = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o").strip()
 
-openai_client = (
-    AzureOpenAI(
+if _azure_endpoint and _azure_key:
+    openai_client = AzureOpenAI(
         azure_endpoint=_azure_endpoint,
         api_key=_azure_key,
         api_version="2025-01-01-preview",
     )
-    if _azure_endpoint and _azure_key
-    else None
-)
+elif _openai_key:
+    openai_client = OpenAI(api_key=_openai_key)
+else:
+    openai_client = None
 
 MÅNEDER_DK = [
     "januar","februar","marts","april","maj","juni",
