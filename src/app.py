@@ -213,25 +213,101 @@ def process_samples(samples: list) -> list:
     return samples
 
 
-def get_ai_recommendations(samples: list) -> list:
-    if not samples or openai_client is None:
-        return ["" for _ in samples]
+def group_by_field(samples: list) -> list:
+    """Gruppér samples per marknummer og beregn gennemsnitsværdier."""
+    from collections import defaultdict
+
+    RANGE_THRESHOLDS = {
+        "rt":               ("abs", 0.5),
+        "fosfor_mg_100g":   ("pct", 0.25),
+        "kalium_mg_100g":   ("pct", 0.25),
+        "magnesium_mg_100g":("pct", 0.25),
+    }
+
+    groups: dict = defaultdict(list)
+    for s in samples:
+        meta = s.get("metadata", {})
+        key = meta.get("marknummer") or meta.get("field_id") or s.get("_id")
+        groups[key].append(s)
 
     fields = []
-    for i, s in enumerate(samples):
-        meta = s.get("metadata", {})
-        m    = s.get("measurements", {})
-        cats = s.get("categories", {})
-        kalk = s.get("kalkbehov", {})
+    for _key, group in groups.items():
+        if len(group) == 1:
+            field = dict(group[0])
+            field["sample_count"] = 1
+            field["ranges"] = {}
+            fields.append(field)
+            continue
+
+        # Gennemsnit af alle numeriske målinger
+        all_keys: set = set()
+        for s in group:
+            all_keys.update(s.get("measurements", {}).keys())
+
+        avg_m: dict = {}
+        for mkey in all_keys:
+            vals = [s.get("measurements", {}).get(mkey) for s in group]
+            vals = [v for v in vals if isinstance(v, (int, float))]
+            if vals:
+                avg_m[mkey] = sum(vals) / len(vals)
+        for k in ("jb_nummer", "jb"):
+            if k in avg_m:
+                avg_m[k] = round(avg_m[k])
+
+        # Spænd (min/max) for nøglenæringsstoffer
+        ranges: dict = {}
+        for mkey, (ttype, tval) in RANGE_THRESHOLDS.items():
+            vals = [s.get("measurements", {}).get(mkey) for s in group]
+            vals = [v for v in vals if isinstance(v, (int, float))]
+            if len(vals) < 2:
+                continue
+            mn, mx, avg = min(vals), max(vals), sum(vals) / len(vals)
+            show = (mx - mn) > tval if ttype == "abs" else (avg > 0 and (mx - mn) / avg > tval)
+            if show:
+                ranges[mkey] = {"min": round(mn, 2), "max": round(mx, 2)}
+
+        synthetic = {"metadata": dict(group[0].get("metadata", {})), "measurements": avg_m}
+        try:
+            enrich_sample(synthetic)
+            NutrientCategorizer.categorize_sample(synthetic)
+            priority = NutrientCategorizer.get_field_priority(synthetic)
+        except Exception:
+            priority = max(s.get("priority_score", 0) for s in group)
+            synthetic.setdefault("categories", {})
+
         fields.append({
+            "metadata":     synthetic["metadata"],
+            "measurements": synthetic["measurements"],
+            "categories":   synthetic.get("categories", {}),
+            "kalkbehov":    synthetic.get("kalkbehov"),
+            "priority_score": priority,
+            "sample_count": len(group),
+            "ranges":       ranges,
+        })
+
+    fields.sort(key=lambda f: f.get("priority_score", 0), reverse=True)
+    return fields
+
+
+def get_ai_recommendations(fields: list) -> list:
+    if not fields or openai_client is None:
+        return ["" for _ in fields]
+
+    prompt_fields = []
+    for i, f in enumerate(fields):
+        meta = f.get("metadata", {})
+        m    = f.get("measurements", {})
+        cats = f.get("categories", {})
+        kalk = f.get("kalkbehov", {})
+        prompt_fields.append({
             "index":            i,
-            "marknummer":       meta.get("marknummer") or f"Ukendt",
-            "analyse_nr":       meta.get("analyse_nr"),
+            "marknummer":       meta.get("marknummer") or "Ukendt",
+            "antal_proever":    f.get("sample_count", 1),
             "jb_nummer":        m.get("jb_nummer"),
             "rt_maal":          m.get("rt"),
             "rt_kategori":      cats.get("rt"),
-            "oensket_rt":       kalk.get("oensket_rt"),
-            "kalk_ton_ha":      kalk.get("kalk_ton_per_ha", 0),
+            "oensket_rt":       kalk.get("oensket_rt") if kalk else None,
+            "kalk_ton_ha":      kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
             "fosfor_mg_100g":   m.get("fosfor_mg_100g"),
             "fosfor_kategori":  cats.get("fosfor"),
             "kalium_mg_100g":   m.get("kalium_mg_100g"),
@@ -242,20 +318,20 @@ def get_ai_recommendations(samples: list) -> list:
 
     system = (
         "Du er faglig jordrådgiver hos Danish Agro. "
-        "Skriv en kort screeeningsanbefaling på dansk for hver mark — max 3 sætninger. "
+        "Skriv en kort screeningsanbefaling på dansk for hver mark — max 3 sætninger. "
         "Fokuser på hvilke næringsstoffer der bør undersøges nærmere og om kalk er relevant. "
         "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
         "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler en mark. "
-        "Hvis flere prøver har samme marknummer, skelnes de med prøvenummer (analyse_nr). "
-        f'Svar som JSON: {{"anbefalinger": ["tekst for index 0", ..., "tekst for index {len(fields)-1}"]}}'
+        "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
+        f'Svar som JSON: {{"anbefalinger": ["tekst for index 0", ..., "tekst for index {len(prompt_fields)-1}"]}}'
     )
     user = (
-        f"Jordanalysedata for {len(fields)} mark(er):\n\n"
-        + json.dumps(fields, ensure_ascii=False, indent=2)
+        f"Jordanalysedata for {len(prompt_fields)} mark(er):\n\n"
+        + json.dumps(prompt_fields, ensure_ascii=False, indent=2)
     )
 
     try:
-        max_tok = min(300 * len(fields) + 500, 8000)
+        max_tok = min(300 * len(prompt_fields) + 500, 8000)
         resp = openai_client.chat.completions.create(
             model=AZURE_DEPLOYMENT,
             messages=[
@@ -274,9 +350,9 @@ def get_ai_recommendations(samples: list) -> list:
         app.logger.warning("GPT-4o fejlede: %s", exc)
         anbefalinger = []
 
-    while len(anbefalinger) < len(samples):
+    while len(anbefalinger) < len(fields):
         anbefalinger.append("Ingen AI-anbefaling tilgængelig.")
-    return anbefalinger[: len(samples)]
+    return anbefalinger[: len(fields)]
 
 
 # ---------------------------------------------------------------------------
@@ -453,11 +529,12 @@ def analyse():
         flash(f"Fejl ved behandling af prøver: {exc}", "danger")
         return redirect(url_for("index"))
 
-    anbefalinger = get_ai_recommendations(samples)
+    fields = group_by_field(samples)
+    anbefalinger = get_ai_recommendations(fields)
 
     kalk_count = sum(
-        1 for s in samples
-        if (s.get("kalkbehov") or {}).get("kalk_ton_per_ha", 0) > 0
+        1 for f in fields
+        if (f.get("kalkbehov") or {}).get("kalk_ton_per_ha", 0) > 0
     )
 
     dt   = datetime.now()
@@ -465,7 +542,7 @@ def analyse():
 
     return render_template(
         "report.html",
-        samples=samples,
+        samples=fields,
         anbefalinger=anbefalinger,
         kundenavn=kundenavn_display,
         kundenavn_mappe=first_mappe,
@@ -506,5 +583,5 @@ def chat():
 if __name__ == "__main__":
     if openai_client is None:
         print("⚠️  OPENAI_API_KEY ikke sat — AI-anbefalinger deaktiveret")
-    print("🌱 AI Gødningsscreening starter på http://127.0.0.1:5001")
+    print("🌱 AI Afleveringsforretning starter på http://127.0.0.1:5001")
     app.run(debug=True, host="127.0.0.1", port=5001)

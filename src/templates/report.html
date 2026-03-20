@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Screeningsrapport — {{ kundenavn }}</title>
+  <title>Afleveringsforretning — {{ kundenavn }}</title>
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
@@ -161,7 +161,7 @@
 <!-- Navbar (skjult ved print) -->
 <nav class="navbar navbar-expand-lg">
   <div class="container">
-    <span class="navbar-brand fw-bold">🌱 AI Gødningsscreening</span>
+    <span class="navbar-brand fw-bold">🌱 AI Afleveringsforretning</span>
     <div class="ms-auto d-flex gap-2">
       <button class="btn btn-outline-light btn-sm no-print" onclick="window.print()">
         &#128438; Gem som PDF
@@ -205,43 +205,10 @@
 
 <!-- Print-header (kun synlig ved print) -->
 <div class="print-header container">
-  <h1 class="h4 mb-0">AI Gødningsscreening — {{ kundenavn }}</h1>
+  <h1 class="h4 mb-0">AI Afleveringsforretning — {{ kundenavn }}</h1>
   <p class="text-muted mb-0 small">{{ dato }} · {{ samples|length }} mark{{ 'er' if samples|length != 1 }} · Screening, ikke en godkendt gødningsplan</p>
 </div>
 
-<!-- Chat -->
-{% if ai_aktiv %}
-<div class="container mb-4 no-print">
-  <div class="card chat-card shadow-sm"
-       data-mappe="{{ kundenavn_mappe }}">
-    <div class="card-body p-4">
-      <h6 class="fw-bold text-success mb-3">
-        Spørg om markerne
-        <small class="fw-normal text-muted">— stil spørgsmål om de analyserede marker</small>
-      </h6>
-
-      <div class="chat-log mb-3" id="chatLog">
-        <div class="chat-bubble assistant">
-          Hej! Stil mig spørgsmål om de {{ samples|length }} analyserede
-          mark{{ 'er' if samples|length != 1 }}. Fx: "Hvilken mark har størst
-          behov for fosfor?" eller "Prioriter de 5 marker".
-        </div>
-      </div>
-
-      <div class="input-group">
-        <input type="text" id="chatInput" class="form-control"
-               placeholder="Skriv et spørgsmål…" autocomplete="off">
-        <button class="btn btn-success" id="chatSend" type="button">
-          Send
-        </button>
-      </div>
-      <div class="form-text mt-1">
-        Screening — ikke en godkendt gødningsplan. Kræver faglig validering.
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
 
 <!-- Bedriftsoversigt -->
 <div class="container mb-4" id="bedriftsoversigt">
@@ -331,8 +298,8 @@
                 <small class="text-muted fw-normal">({{ meta['field_id'] }})</small>
               {% endif %}
             </h5>
-            {% if meta.get('analyse_nr') %}
-              <small class="text-muted">Prøve&nbsp;{{ meta['analyse_nr'] }}</small>
+            {% if sample.get('sample_count', 1) > 1 %}
+              <small class="text-muted">{{ sample['sample_count'] }} prøver · gennemsnit</small>
             {% endif %}
             <div class="d-flex align-items-center gap-1 no-print">
               <input type="number" class="form-control form-control-sm ha-input"
@@ -365,9 +332,18 @@
                       ('Kalium (K)',        'kalium_mg_100g','mg/100g'),
                       ('Magnesium (Mg)',    'magnesium_mg_100g','mg/100g'),
                   ] %}
+                  {% set r = sample.get('ranges', {}).get(key) %}
                   <tr>
                     <td>{{ param }}{% if unit %} <small class="text-muted">{{ unit }}</small>{% endif %}</td>
-                    <td>{{ m.get(key) | fmt(2 if key == 'rt' else 1) }}</td>
+                    <td>
+                      {{ m.get(key) | fmt(2 if key == 'rt' else 1) }}
+                      {% if r %}
+                        <small class="text-muted d-block">
+                          min {{ r.min | fmt(2 if key == 'rt' else 1) }} –
+                          max {{ r.max | fmt(2 if key == 'rt' else 1) }}
+                        </small>
+                      {% endif %}
+                    </td>
                     <td>
                       {% set k = cats.get(key.split('_')[0]) %}
                       {% if k %}
@@ -417,7 +393,7 @@
   </div><!-- /row -->
 
   <p class="text-center disclaimer mt-3 no-print">
-    Screening genereret af AI Gødningsscreening — Danish Agro intern POC —
+    Screening genereret af AI Afleveringsforretning — Danish Agro intern POC —
     ikke en juridisk godkendt gødningsplan. Kræver faglig validering.
   </p>
 </div>
