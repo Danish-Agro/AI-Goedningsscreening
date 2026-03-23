@@ -25,6 +25,8 @@ from parsers.format_detector import detect_and_create_parser, FormatNotRecognize
 from analysis.nutrient_categorizer import NutrientCategorizer
 from analysis.beregningsgrundlag import beregn_kalkbehov, beregn_jb_nummer
 from analysis.agronomiske_advarsler import generer_advarsler, Alvorlighedsgrad
+from analysis.handlingstekster import byg_fuld_prompt_kontekst, get_symbol, get_handlingstekst
+from analysis.seges_normer import klassificer_naering, CUT_KLASSER_SIMPEL, BT_KLASSER
 from ai.assistant import FertilizerAssistant
 
 load_dotenv()
@@ -65,6 +67,73 @@ MÅNEDER_DK = [
     "januar","februar","marts","april","maj","juni",
     "juli","august","september","oktober","november","december",
 ]
+
+# Mapping fra NutrientCategorizer (engelsk) → handlingstekster.py (dansk)
+_KATEGORI_TIL_DANSK = {
+    "Large Demand":       "Meget lav",
+    "Medium Demand":      "Lav",
+    "Small Demand":       "Lav",
+    "OK":                 "Middel",
+    "Small Surplus":      "Høj",
+    "Large Surplus":      "Meget høj",
+    "Suspicious Surplus": "Meget høj",
+}
+
+# Hvilke parametre der kobles mellem cats-nøgle, handlingstekster-param og measurement-nøgle
+_NÆRINGSSTOF_PARAM_MAP = [
+    ("rt",        "Rt",  "rt"),
+    ("fosfor",    "Pt",  "fosfor_mg_100g"),
+    ("kalium",    "Kt",  "kalium_mg_100g"),
+    ("magnesium", "Mgt", "magnesium_mg_100g"),
+]
+
+
+def _byg_næringsstof_kontekst(cats: dict, m: dict) -> dict:
+    """
+    Bygger input til byg_fuld_prompt_kontekst() og symbology til frontend.
+
+    Returnerer:
+        {
+          "næringsstoffer": {...},   # til byg_fuld_prompt_kontekst
+          "symbology": {...},        # til report.html (symbol + farve per næringsstof)
+          "prompt": "...",           # færdig tekstblok til AI-system-prompt
+        }
+    """
+    næringsstoffer = {}
+    symbology = {}
+
+    def _tilføj(sym_key: str, param: str, klasse: str, værdi):
+        næringsstoffer[param] = {"værdi": værdi, "klasse": klasse}
+        sym  = get_symbol(klasse)
+        tekst = get_handlingstekst(param, klasse)
+        symbology[sym_key] = {
+            "symbol":  sym["symbol"],
+            "farve":   sym["farve"],
+            "klasse":  klasse,
+            "handling": tekst.get("handling"),
+            "kort":    tekst.get("kort"),
+        }
+
+    for cat_key, param, meas_key in _NÆRINGSSTOF_PARAM_MAP:
+        cat_eng = cats.get(cat_key)
+        if cat_eng is None:
+            continue
+        klasse = _KATEGORI_TIL_DANSK.get(cat_eng, "Middel")
+        _tilføj(cat_key, param, klasse, m.get(meas_key))
+
+    # Cut og Bt klassificeres direkte fra måleværdi via SEGES-klasser
+    cut_val = m.get("kobber_mg_kg")
+    if cut_val is not None:
+        klasse = klassificer_naering(cut_val, CUT_KLASSER_SIMPEL)
+        _tilføj("cut", "Cut", klasse, cut_val)
+
+    bt_val = m.get("bor_mg_10kg")
+    if bt_val is not None:
+        klasse = klassificer_naering(bt_val, BT_KLASSER)
+        _tilføj("bt", "Bt", klasse, bt_val)
+
+    prompt = byg_fuld_prompt_kontekst(næringsstoffer) if næringsstoffer else ""
+    return {"næringsstoffer": næringsstoffer, "symbology": symbology, "prompt": prompt}
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +267,7 @@ def enrich_sample(sample: dict) -> dict:
     return sample
 
 
-def _run_advarsler(m: dict, mark_nr: str) -> dict:
+def _run_advarsler(m: dict, mark_nr: str, afgrøde: str = None) -> dict:
     """
     Kør alle agronomiske advarselschecks for én marks measurements-dict.
     Returnerer dict med 'advarsler' (JSON-serialiserbar liste) og
@@ -213,10 +282,12 @@ def _run_advarsler(m: dict, mark_nr: str) -> dict:
         mgt=m.get("magnesium_mg_100g"),
         cut=m.get("kobber_mg_kg"),
         bt=m.get("bor_mg_10kg"),
+        mot=m.get("molybdæn_mg_kg"),
         jb_nr=m.get("jb_nummer"),
         organisk_stof_pct=os_pct,
         kulstof_pct=(os_pct * 0.58) if os_pct is not None else None,
         ler_pct=m.get("ler_pct"),
+        afgrøde=afgrøde or None,
     )
     return {
         "advarsler": [
@@ -234,7 +305,7 @@ def _run_advarsler(m: dict, mark_nr: str) -> dict:
     }
 
 
-def process_samples(samples: list) -> list:
+def process_samples(samples: list, afgrøde: str = None) -> list:
     for s in samples:
         try:
             enrich_sample(s)
@@ -250,6 +321,7 @@ def process_samples(samples: list) -> list:
             adv = _run_advarsler(
                 s.get("measurements", {}),
                 s.get("metadata", {}).get("marknummer") or "?",
+                afgrøde=afgrøde,
             )
             s.update(adv)
         except Exception as exc:
@@ -260,7 +332,7 @@ def process_samples(samples: list) -> list:
     return samples
 
 
-def group_by_field(samples: list) -> list:
+def group_by_field(samples: list, afgrøde: str = None) -> list:
     """Gruppér samples per marknummer og beregn gennemsnitsværdier."""
     from collections import defaultdict
 
@@ -322,6 +394,7 @@ def group_by_field(samples: list) -> list:
             adv = _run_advarsler(
                 synthetic["measurements"],
                 synthetic["metadata"].get("marknummer") or "?",
+                afgrøde=afgrøde,
             )
         except Exception:
             priority = max(s.get("priority_score", 0) for s in group)
@@ -340,6 +413,18 @@ def group_by_field(samples: list) -> list:
         })
 
     fields.sort(key=lambda f: f.get("priority_score", 0), reverse=True)
+
+    # Berig alle fields med symbology og handlingstekster til AI og frontend
+    for f in fields:
+        try:
+            nk = _byg_næringsstof_kontekst(f.get("categories", {}), f.get("measurements", {}))
+            f["symbology"]             = nk["symbology"]
+            f["handlingstekster_prompt"] = nk["prompt"]
+        except Exception as exc:
+            app.logger.warning("_byg_næringsstof_kontekst fejlede: %s", exc)
+            f.setdefault("symbology", {})
+            f.setdefault("handlingstekster_prompt", "")
+
     return fields
 
 
@@ -368,15 +453,17 @@ def get_ai_recommendations(fields: list) -> list:
             "kalium_kategori":      cats.get("kalium"),
             "magnesium_mg_100g":    m.get("magnesium_mg_100g"),
             "magnesium_kategori":   cats.get("magnesium"),
-            "agronomiske_advarsler": f.get("advarsler_prompt", ""),
+            "seges_handlingstekster": f.get("handlingstekster_prompt", ""),
+            "agronomiske_advarsler":  f.get("advarsler_prompt", ""),
         })
 
     system = (
         "Du er faglig jordrådgiver hos Danish Agro. "
         "Skriv en kort screeningsanbefaling på dansk for hver mark — max 3 sætninger. "
-        "Fokuser på hvilke næringsstoffer der bør undersøges nærmere og om kalk er relevant. "
+        "Brug SEGES-handlingsteksterne i feltet 'seges_handlingstekster' som fagligt grundlag "
+        "for din anbefaling — de angiver præcist hvad der bør gøres for hvert næringsstof. "
         "Tag hensyn til de agronomiske advarsler i feltet 'agronomiske_advarsler' — "
-        "nævn kritiske advarsler eksplicit i din anbefaling. "
+        "nævn kritiske advarsler eksplicit. "
         "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
         "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler en mark. "
         "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
@@ -579,14 +666,16 @@ def analyse():
         flash("Kunne ikke finde de valgte marker.", "danger")
         return redirect(url_for("index"))
 
+    afgrøde = request.form.get("afgrøde", "").strip() or None
+
     try:
-        samples = process_samples(samples)
+        samples = process_samples(samples, afgrøde=afgrøde)
     except Exception as exc:
         app.logger.error("process_samples fejlede: %s", exc, exc_info=True)
         flash(f"Fejl ved behandling af prøver: {exc}", "danger")
         return redirect(url_for("index"))
 
-    fields = group_by_field(samples)
+    fields = group_by_field(samples, afgrøde=afgrøde)
     anbefalinger = get_ai_recommendations(fields)
 
     kalk_count = sum(

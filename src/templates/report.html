@@ -300,15 +300,20 @@
             <div class="table-responsive mb-3">
               <table class="table table-sm table-bordered nutrient-table mb-0">
                 <thead class="table-light">
-                  <tr><th>Parameter</th><th>Målt</th><th>Kategori</th></tr>
+                  <tr><th>Parameter</th><th>Målt</th><th>Klasse</th></tr>
                 </thead>
                 <tbody>
                   {% for param, key, unit in [
-                      ('Reaktionstal (Rt)', 'rt',            ''),
-                      ('Fosfor (P)',        'fosfor_mg_100g','mg/100g'),
-                      ('Kalium (K)',        'kalium_mg_100g','mg/100g'),
+                      ('Reaktionstal (Rt)', 'rt',               ''),
+                      ('Fosfor (P)',        'fosfor_mg_100g',   'mg/100g'),
+                      ('Kalium (K)',        'kalium_mg_100g',   'mg/100g'),
                       ('Magnesium (Mg)',    'magnesium_mg_100g','mg/100g'),
+                      ('Kobber (Cu)',       'kobber_mg_kg',     'mg/kg'),
+                      ('Bor (B)',           'bor_mg_10kg',      'mg/10kg'),
                   ] %}
+                  {% if m.get(key) is not none %}
+                  {% set sym_key = 'cut' if key == 'kobber_mg_kg' else ('bt' if key == 'bor_mg_10kg' else key.split('_')[0]) %}
+                  {% set sym = sample.get('symbology', {}).get(sym_key, {}) %}
                   {% set r = sample.get('ranges', {}).get(key) %}
                   <tr>
                     <td>{{ param }}{% if unit %} <small class="text-muted">{{ unit }}</small>{% endif %}</td>
@@ -322,14 +327,20 @@
                       {% endif %}
                     </td>
                     <td>
-                      {% set k = cats.get(key.split('_')[0]) %}
-                      {% if k %}
-                        <span class="badge bg-{{ k | badge_farve }} badge-pill">{{ k | kategori_dk }}</span>
+                      {% if sym %}
+                        <span style="color:{{ sym.farve }}; font-size:1.15em; font-weight:700; margin-right:.35em;">{{ sym.symbol }}</span>
+                        <span style="color:{{ sym.farve }}; font-weight:600;">{{ sym.klasse }}</span>
                       {% else %}
-                        <span class="text-muted">—</span>
+                        {% set k = cats.get(key.split('_')[0]) %}
+                        {% if k %}
+                          <span class="badge bg-{{ k | badge_farve }} badge-pill">{{ k | kategori_dk }}</span>
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
                       {% endif %}
                     </td>
                   </tr>
+                  {% endif %}
                   {% endfor %}
                 </tbody>
               </table>
@@ -351,6 +362,57 @@
                     {% endif %}
                   </div>
                 </div>
+              </div>
+            {% endif %}
+
+            <!-- Agronomiske advarsler -->
+            {% set advarsler = sample.get('advarsler', []) %}
+            {% if advarsler %}
+              <h6 class="text-uppercase text-muted small mb-2">Agronomiske advarsler</h6>
+              {% for a in advarsler %}
+                {% if a.alvorlighedsgrad == 'kritisk' %}
+                  {% set cls = 'danger' %}
+                {% elif a.alvorlighedsgrad == 'advarsel' %}
+                  {% set cls = 'warning' %}
+                {% else %}
+                  {% set cls = 'info' %}
+                {% endif %}
+                <div class="alert alert-{{ cls }} py-2 px-3 mb-2">
+                  <strong>{{ a.titel }}</strong> — {{ a.besked }}
+                  {% if a.handling %}
+                    <div class="small mt-1">&#8594; {{ a.handling }}</div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% endif %}
+
+            <!-- SEGES handlingstekster — kompakt tabel -->
+            {% set symbology = sample.get('symbology', {}) %}
+            {% if symbology %}
+              <h6 class="text-uppercase text-muted small mb-2 mt-1">Handling pr. næringsstof</h6>
+              <div class="table-responsive mb-3">
+                <table class="table table-sm mb-0" style="font-size:.88rem;">
+                  <tbody>
+                  {% for sym_key, param_label in [
+                      ('rt',        'Reaktionstal'),
+                      ('fosfor',    'Fosfor'),
+                      ('kalium',    'Kalium'),
+                      ('magnesium', 'Magnesium'),
+                      ('cut',       'Kobber'),
+                      ('bt',        'Bor'),
+                  ] %}
+                  {% set sym = symbology.get(sym_key) %}
+                  {% if sym %}
+                  <tr>
+                    <td style="width:1.5em; text-align:center; color:{{ sym.farve }}; font-weight:700; font-size:1.15em;">{{ sym.symbol }}</td>
+                    <td style="width:7em; color:{{ sym.farve }}; font-weight:600;">{{ param_label }}</td>
+                    <td style="width:6em; color:{{ sym.farve }};">{{ sym.klasse }}</td>
+                    <td class="text-muted">{{ sym.handling if sym.handling else 'Ingen særlig handling' }}</td>
+                  </tr>
+                  {% endif %}
+                  {% endfor %}
+                  </tbody>
+                </table>
               </div>
             {% endif %}
 
