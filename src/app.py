@@ -4,12 +4,12 @@ AI Gødningsscreening — Flask webapp
 Upload → gem → søg → vælg marker → analysér → rapport → PDF
 """
 
+import asyncio
 import json
 import os
 import re
 import sys
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -19,7 +19,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from flask import Flask, jsonify, render_template, request, flash, redirect, url_for
 from dotenv import load_dotenv
-from openai import AzureOpenAI, OpenAI
+from openai import AzureOpenAI, AsyncAzureOpenAI, OpenAI, AsyncOpenAI
 
 from parsers.soiloptix_parser import SoilOptixParser
 from parsers.format_detector import detect_and_create_parser, FormatNotRecognizedError
@@ -59,10 +59,17 @@ if _azure_endpoint and _azure_key:
         api_key=_azure_key,
         api_version="2025-01-01-preview",
     )
+    async_openai_client = AsyncAzureOpenAI(
+        azure_endpoint=_azure_endpoint,
+        api_key=_azure_key,
+        api_version="2025-01-01-preview",
+    )
 elif _openai_key:
     openai_client = OpenAI(api_key=_openai_key)
+    async_openai_client = AsyncOpenAI(api_key=_openai_key)
 else:
     openai_client = None
+    async_openai_client = None
 
 MÅNEDER_DK = [
     "januar","februar","marts","april","maj","juni",
@@ -443,14 +450,12 @@ _AI_SYSTEM_PROMPT = (
 )
 
 
-def _ai_anbefaling_for_field(field: dict, index: int) -> tuple[int, str]:
-    """Hent AI-anbefaling for én mark. Køres parallelt."""
+def _byg_ai_payload(field: dict) -> dict:
     meta = field.get("metadata", {})
     m    = field.get("measurements", {})
     cats = field.get("categories", {})
     kalk = field.get("kalkbehov", {})
-
-    payload = {
+    return {
         "marknummer":             meta.get("marknummer") or "Ukendt",
         "antal_proever":          field.get("sample_count", 1),
         "jb_nummer":              m.get("jb_nummer"),
@@ -468,43 +473,48 @@ def _ai_anbefaling_for_field(field: dict, index: int) -> tuple[int, str]:
         "agronomiske_advarsler":  field.get("advarsler_prompt", ""),
     }
 
-    try:
-        resp = openai_client.chat.completions.create(
-            model=AZURE_DEPLOYMENT,
-            messages=[
-                {"role": "system", "content": _AI_SYSTEM_PROMPT},
-                {"role": "user",   "content": json.dumps(payload, ensure_ascii=False)},
-            ],
-            temperature=0.3,
-            max_tokens=350,
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(resp.choices[0].message.content or "{}")
-        return index, data.get("anbefaling", "Ingen AI-anbefaling tilgængelig.")
-    except Exception as exc:
-        app.logger.warning("GPT-4o fejlede for mark %s: %s", meta.get("marknummer"), exc)
-        return index, "Ingen AI-anbefaling tilgængelig."
+
+async def _ai_anbefaling_async(field: dict, index: int, sem: asyncio.Semaphore) -> tuple[int, str]:
+    marknummer = (field.get("metadata") or {}).get("marknummer", "?")
+    async with sem:
+        try:
+            resp = await async_openai_client.chat.completions.create(
+                model=AZURE_DEPLOYMENT,
+                messages=[
+                    {"role": "system", "content": _AI_SYSTEM_PROMPT},
+                    {"role": "user",   "content": json.dumps(_byg_ai_payload(field), ensure_ascii=False)},
+                ],
+                temperature=0.3,
+                max_tokens=350,
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(resp.choices[0].message.content or "{}")
+            return index, data.get("anbefaling", "Ingen AI-anbefaling tilgængelig.")
+        except Exception as exc:
+            app.logger.warning("GPT-4o fejlede for mark %s: %s", marknummer, exc)
+            return index, "Ingen AI-anbefaling tilgængelig."
 
 
 def get_ai_recommendations(fields: list) -> list:
-    if not fields or openai_client is None:
+    if not fields or async_openai_client is None:
         return ["" for _ in fields]
 
-    anbefalinger = ["Ingen AI-anbefaling tilgængelig."] * len(fields)
-
-    with ThreadPoolExecutor(max_workers=min(len(fields), 10)) as executor:
-        futures = {
-            executor.submit(_ai_anbefaling_for_field, field, i): i
-            for i, field in enumerate(fields)
-        }
-        for future in as_completed(futures):
-            try:
-                idx, tekst = future.result()
+    async def _run_alle():
+        sem = asyncio.Semaphore(25)  # max 25 samtidige kald
+        resultater = await asyncio.gather(
+            *[_ai_anbefaling_async(field, i, sem) for i, field in enumerate(fields)],
+            return_exceptions=True,
+        )
+        anbefalinger = ["Ingen AI-anbefaling tilgængelig."] * len(fields)
+        for r in resultater:
+            if isinstance(r, Exception):
+                app.logger.warning("Uventet fejl i AI-kald: %s", r)
+            else:
+                idx, tekst = r
                 anbefalinger[idx] = tekst
-            except Exception as exc:
-                app.logger.warning("Uventet fejl i AI-kald: %s", exc)
+        return anbefalinger
 
-    return anbefalinger
+    return asyncio.run(_run_alle())
 
 
 # ---------------------------------------------------------------------------
