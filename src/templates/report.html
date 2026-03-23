@@ -131,9 +131,6 @@
       .navbar, .summary-bar, .sort-bar,
       .no-print, .disclaimer { display: none !important; }
 
-      /* Vis ha-print-display når der printes */
-      .ha-print-display { display: inline !important; }
-
       /* Vis print-header */
       .print-header {
         display: block !important;
@@ -216,28 +213,17 @@
     <div class="card-header bg-success text-white d-flex align-items-center gap-2 py-2"
          style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#oversigtBody">
       <strong>Bedriftsoversigt</strong>
-      <small class="ms-auto fw-normal" id="oversigt-ha-note">Angiv ha per mark for at se totaler</small>
-      <span class="no-print ms-1">&#9660;</span>
+      <span class="no-print ms-auto">&#9660;</span>
     </div>
     <div class="collapse show" id="oversigtBody">
       <div class="card-body">
         <div class="row g-3 mb-3">
-          <div class="col-6 col-md-3">
-            <div class="text-muted small text-uppercase mb-1">Areal i alt</div>
-            <div class="h4 mb-0" id="oversigt-total-ha">—</div>
-            <div class="text-muted small" id="oversigt-ha-mangler"></div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div class="text-muted small text-uppercase mb-1">Samlet kalkbehov</div>
-            <div class="h4 mb-0" id="oversigt-total-kalk">—</div>
-            <div class="text-muted small" id="oversigt-kalk-note"></div>
-          </div>
-          <div class="col-6 col-md-3">
+          <div class="col-6 col-md-6">
             <div class="text-muted small text-uppercase mb-1">Marker med kalkbehov</div>
             <div class="h4 mb-0">{{ kalk_count }}</div>
             <div class="text-muted small">ud af {{ samples|length }} mark{{ 'er' if samples|length != 1 }}</div>
           </div>
-          <div class="col-6 col-md-3">
+          <div class="col-6 col-md-6">
             <div class="text-muted small text-uppercase mb-1">Antal marker</div>
             <div class="h4 mb-0">{{ samples|length }}</div>
           </div>
@@ -281,8 +267,6 @@
            data-fosfor="{{ m.get('fosfor_mg_100g') if m.get('fosfor_mg_100g') is not none else '' }}"
            data-kalium="{{ m.get('kalium_mg_100g') if m.get('kalium_mg_100g') is not none else '' }}"
            data-magnesium="{{ m.get('magnesium_mg_100g') if m.get('magnesium_mg_100g') is not none else '' }}"
-           data-kalk="{{ kalk.get('kalk_ton_per_ha', 0) if kalk else 0 }}"
-           data-kalk-ton-ha="{{ kalk.get('kalk_ton_per_ha', 0) if kalk else 0 }}"
            data-rt-kat="{{ cats.get('rt') or '' }}"
            data-p-kat="{{ cats.get('fosfor') or '' }}"
            data-k-kat="{{ cats.get('kalium') or '' }}"
@@ -301,13 +285,6 @@
             {% if sample.get('sample_count', 1) > 1 %}
               <small class="text-muted">{{ sample['sample_count'] }} prøver · gennemsnit</small>
             {% endif %}
-            <div class="d-flex align-items-center gap-1 no-print">
-              <input type="number" class="form-control form-control-sm ha-input"
-                     placeholder="0.0" step="0.1" min="0" style="width:75px"
-                     title="Angiv markens størrelse i hektar">
-              <span class="text-muted small">ha</span>
-            </div>
-            <span class="ha-print-display d-none text-muted small fst-italic"></span>
             <span class="badge bg-{{ score | prioritet_farve }} priority-badge ms-auto">
               Prioritet {{ score }}
             </span>
@@ -369,7 +346,6 @@
                     <span class="me-3">Ønsket Rt: <strong>{{ kalk.get('oensket_rt') | fmt(2) }}</strong></span>
                     {% if kalk_ton > 0 %}
                       <span class="badge bg-warning text-dark">{{ kalk.get('kalk_ton_per_ha') | fmt(1) }} t CaCO₃/ha</span>
-                      <span class="kalk-total badge bg-warning text-dark d-none"></span>
                     {% else %}
                       <span class="badge bg-success">Intet kalkbehov</span>
                     {% endif %}
@@ -464,7 +440,7 @@
 </script>
 
 <script>
-/* ── Bedriftsoversigt & Hektar-beregning ─────────────────────────── */
+/* ── Bedriftsoversigt ────────────────────────────────────────────── */
 (function () {
   const KATEGORI_GRUPPE = {
     'Large Demand':       'stor',
@@ -491,65 +467,15 @@
 
   function updateOversigt() {
     const wrappers = [...document.querySelectorAll('.field-wrapper')];
-
-    let totalHa = 0, totalKalk = 0, markUdenHa = 0, markUdenHaMedKalk = 0;
     const naeringCounts = NAERING.map(() => ({ stor: 0, middel: 0, lille: 0, ok: 0, overskud: 0 }));
 
     wrappers.forEach(w => {
-      const haInput   = w.querySelector('.ha-input');
-      const ha        = haInput ? (parseFloat(haInput.value) || 0) : 0;
-      const kalkTonHa = parseFloat(w.dataset.kalkTonHa) || 0;
-
-      // Opdater print-display
-      const printEl = w.querySelector('.ha-print-display');
-      if (printEl) {
-        printEl.textContent = ha > 0 ? `${ha} ha` : '';
-        printEl.classList.toggle('d-none', ha <= 0);
-      }
-
-      // Opdater total-kalk på kortet
-      const kalkTotalEl = w.querySelector('.kalk-total');
-      if (kalkTotalEl) {
-        if (ha > 0 && kalkTonHa > 0) {
-          kalkTotalEl.textContent = `= ${(kalkTonHa * ha).toFixed(1)} t CaCO₃ i alt`;
-          kalkTotalEl.classList.remove('d-none');
-        } else {
-          kalkTotalEl.classList.add('d-none');
-        }
-      }
-
-      if (ha > 0) {
-        totalHa   += ha;
-        totalKalk += kalkTonHa * ha;
-      } else {
-        markUdenHa++;
-        if (kalkTonHa > 0) markUdenHaMedKalk++;
-      }
-
-      // Tæl næringsstofkategorier
       NAERING.forEach((n, i) => {
         const kat    = w.dataset[n.attr] || '';
         const gruppe = KATEGORI_GRUPPE[kat] || 'ok';
         naeringCounts[i][gruppe]++;
       });
     });
-
-    // Opdater totaler i oversigten
-    const elHa   = document.getElementById('oversigt-total-ha');
-    const elKalk = document.getElementById('oversigt-total-kalk');
-    const elNote = document.getElementById('oversigt-ha-note');
-    const elMangler = document.getElementById('oversigt-ha-mangler');
-    const elKalkNote = document.getElementById('oversigt-kalk-note');
-
-    if (elHa)      elHa.textContent   = totalHa > 0 ? `${totalHa.toFixed(1)} ha` : '—';
-    if (elKalk)    elKalk.textContent  = totalHa > 0 ? `${totalKalk.toFixed(1)} t CaCO₃` : '—';
-    if (elNote)    elNote.textContent  = markUdenHa > 0 ? `${markUdenHa} mark${markUdenHa !== 1 ? 'er' : ''} mangler ha` : '';
-    if (elMangler) elMangler.textContent = markUdenHa > 0 ? `${markUdenHa} mark${markUdenHa !== 1 ? 'er' : ''} uden ha-angivelse` : '';
-    if (elKalkNote && markUdenHaMedKalk > 0) {
-      elKalkNote.textContent = `+ ${markUdenHaMedKalk} mark${markUdenHaMedKalk !== 1 ? 'er' : ''} med kalkbehov mangler ha`;
-    } else if (elKalkNote) {
-      elKalkNote.textContent = '';
-    }
 
     // Opdater næringsstoftabel
     const tbody = document.getElementById('oversigt-naering-tbody');
@@ -570,12 +496,6 @@
     }
   }
 
-  // Lyt til ha-input ændringer
-  document.addEventListener('input', e => {
-    if (e.target.classList.contains('ha-input')) updateOversigt();
-  });
-
-  // Initial opdatering
   updateOversigt();
 })();
 </script>
