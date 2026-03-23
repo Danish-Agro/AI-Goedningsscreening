@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -428,75 +429,82 @@ def group_by_field(samples: list, afgrøde: str = None) -> list:
     return fields
 
 
+_AI_SYSTEM_PROMPT = (
+    "Du er faglig jordrådgiver hos Danish Agro. "
+    "Skriv en kort screeningsanbefaling på dansk — max 3 sætninger. "
+    "Brug SEGES-handlingsteksterne i feltet 'seges_handlingstekster' som fagligt grundlag "
+    "for din anbefaling — de angiver præcist hvad der bør gøres for hvert næringsstof. "
+    "Tag hensyn til de agronomiske advarsler i feltet 'agronomiske_advarsler' — "
+    "nævn kritiske advarsler eksplicit. "
+    "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
+    "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler marken. "
+    "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
+    'Svar som JSON: {"anbefaling": "tekst"}'
+)
+
+
+def _ai_anbefaling_for_field(field: dict, index: int) -> tuple[int, str]:
+    """Hent AI-anbefaling for én mark. Køres parallelt."""
+    meta = field.get("metadata", {})
+    m    = field.get("measurements", {})
+    cats = field.get("categories", {})
+    kalk = field.get("kalkbehov", {})
+
+    payload = {
+        "marknummer":             meta.get("marknummer") or "Ukendt",
+        "antal_proever":          field.get("sample_count", 1),
+        "jb_nummer":              m.get("jb_nummer"),
+        "rt_maal":                m.get("rt"),
+        "rt_kategori":            cats.get("rt"),
+        "oensket_rt":             kalk.get("oensket_rt") if kalk else None,
+        "kalk_ton_ha":            kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
+        "fosfor_mg_100g":         m.get("fosfor_mg_100g"),
+        "fosfor_kategori":        cats.get("fosfor"),
+        "kalium_mg_100g":         m.get("kalium_mg_100g"),
+        "kalium_kategori":        cats.get("kalium"),
+        "magnesium_mg_100g":      m.get("magnesium_mg_100g"),
+        "magnesium_kategori":     cats.get("magnesium"),
+        "seges_handlingstekster": field.get("handlingstekster_prompt", ""),
+        "agronomiske_advarsler":  field.get("advarsler_prompt", ""),
+    }
+
+    try:
+        resp = openai_client.chat.completions.create(
+            model=AZURE_DEPLOYMENT,
+            messages=[
+                {"role": "system", "content": _AI_SYSTEM_PROMPT},
+                {"role": "user",   "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.3,
+            max_tokens=350,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content or "{}")
+        return index, data.get("anbefaling", "Ingen AI-anbefaling tilgængelig.")
+    except Exception as exc:
+        app.logger.warning("GPT-4o fejlede for mark %s: %s", meta.get("marknummer"), exc)
+        return index, "Ingen AI-anbefaling tilgængelig."
+
+
 def get_ai_recommendations(fields: list) -> list:
     if not fields or openai_client is None:
         return ["" for _ in fields]
 
-    prompt_fields = []
-    for i, f in enumerate(fields):
-        meta = f.get("metadata", {})
-        m    = f.get("measurements", {})
-        cats = f.get("categories", {})
-        kalk = f.get("kalkbehov", {})
-        prompt_fields.append({
-            "index":                i,
-            "marknummer":           meta.get("marknummer") or "Ukendt",
-            "antal_proever":        f.get("sample_count", 1),
-            "jb_nummer":            m.get("jb_nummer"),
-            "rt_maal":              m.get("rt"),
-            "rt_kategori":          cats.get("rt"),
-            "oensket_rt":           kalk.get("oensket_rt") if kalk else None,
-            "kalk_ton_ha":          kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
-            "fosfor_mg_100g":       m.get("fosfor_mg_100g"),
-            "fosfor_kategori":      cats.get("fosfor"),
-            "kalium_mg_100g":       m.get("kalium_mg_100g"),
-            "kalium_kategori":      cats.get("kalium"),
-            "magnesium_mg_100g":    m.get("magnesium_mg_100g"),
-            "magnesium_kategori":   cats.get("magnesium"),
-            "seges_handlingstekster": f.get("handlingstekster_prompt", ""),
-            "agronomiske_advarsler":  f.get("advarsler_prompt", ""),
-        })
+    anbefalinger = ["Ingen AI-anbefaling tilgængelig."] * len(fields)
 
-    system = (
-        "Du er faglig jordrådgiver hos Danish Agro. "
-        "Skriv en kort screeningsanbefaling på dansk for hver mark — max 3 sætninger. "
-        "Brug SEGES-handlingsteksterne i feltet 'seges_handlingstekster' som fagligt grundlag "
-        "for din anbefaling — de angiver præcist hvad der bør gøres for hvert næringsstof. "
-        "Tag hensyn til de agronomiske advarsler i feltet 'agronomiske_advarsler' — "
-        "nævn kritiske advarsler eksplicit. "
-        "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
-        "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler en mark. "
-        "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
-        f'Svar som JSON: {{"anbefalinger": ["tekst for index 0", ..., "tekst for index {len(prompt_fields)-1}"]}}'
-    )
-    user = (
-        f"Jordanalysedata for {len(prompt_fields)} mark(er):\n\n"
-        + json.dumps(prompt_fields, ensure_ascii=False, indent=2)
-    )
+    with ThreadPoolExecutor(max_workers=min(len(fields), 10)) as executor:
+        futures = {
+            executor.submit(_ai_anbefaling_for_field, field, i): i
+            for i, field in enumerate(fields)
+        }
+        for future in as_completed(futures):
+            try:
+                idx, tekst = future.result()
+                anbefalinger[idx] = tekst
+            except Exception as exc:
+                app.logger.warning("Uventet fejl i AI-kald: %s", exc)
 
-    try:
-        max_tok = min(300 * len(prompt_fields) + 500, 8000)
-        resp = openai_client.chat.completions.create(
-            model=AZURE_DEPLOYMENT,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=0.3,
-            max_tokens=max_tok,
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(resp.choices[0].message.content or "{}")
-        anbefalinger = data.get("anbefalinger", [])
-        if not isinstance(anbefalinger, list):
-            anbefalinger = []
-    except Exception as exc:
-        app.logger.warning("GPT-4o fejlede: %s", exc)
-        anbefalinger = []
-
-    while len(anbefalinger) < len(fields):
-        anbefalinger.append("Ingen AI-anbefaling tilgængelig.")
-    return anbefalinger[: len(fields)]
+    return anbefalinger
 
 
 # ---------------------------------------------------------------------------

@@ -160,16 +160,12 @@
 
 <!-- Analyse-formular (checkboxes tilføjes dynamisk via JS med form="analyseForm") -->
 <form id="analyseForm" method="post" action="/analyse">
-  <input type="hidden" name="afgrøde" id="afgrødeHidden" value="">
 </form>
 
 <!-- Sticky analyse-bar -->
 <div id="analyseBar">
   <div class="container d-flex flex-wrap align-items-center gap-2" style="max-width:780px">
     <span id="valgTekst" class="fw-semibold">0 marker valgt</span>
-    <input type="text" id="afgrødeInput" placeholder="Afgrøde (fx vinterhvede)"
-           class="form-control form-control-sm ms-auto" style="max-width:200px"
-           autocomplete="off">
     <button type="submit" form="analyseForm" class="btn btn-light btn-sm fw-semibold">
       Analysér valgte marker &rarr;
     </button>
@@ -373,8 +369,6 @@
   analyseForm.addEventListener('submit', () => {
     const valgte = document.querySelectorAll('.mark-cb:checked');
     if (valgte.length > 0) {
-      document.getElementById('afgrødeHidden').value =
-        document.getElementById('afgrødeInput').value.trim();
       visOverlay('Analyserer marker…', analyseTrin);
     }
   });
