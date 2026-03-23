@@ -2,24 +2,37 @@
 """
 Nutrient Status Categorizer
 Categorizes soil nutrient levels based on threshold values.
-Grænseværdier og jordtype-afhængig logik er importeret fra beregningsgrundlag.py.
+Klassificering via SEGES-normer (seges_normer.py).
 """
 
 from typing import Dict, Any, Optional
-from analysis.beregningsgrundlag import (
-    kategoriser_rt,
-    kategoriser_mg,
-    kategoriser_fosfor,
-    kategoriser_kalium,
+from analysis.seges_normer import (
+    klassificer_pt,
+    klassificer_kt,
+    klassificer_mgt,
+    klassificer_rt as seges_klassificer_rt,
 )
 
+# SEGES bruger 5 danske klasser. Vi mapper til de 7 engelske kategorier
+# som rapporten, AI-assistenten og prioritetssystemet forventer.
+_SEGES_TIL_KATEGORI: Dict[str, str] = {
+    "Meget lavt": "Large Demand",
+    "Lavt":       "Medium Demand",
+    "Middel":     "OK",
+    "Højt":       "Small Surplus",
+    "Meget højt": "Large Surplus",
+}
+
 # Standard JB-nummer bruges som fallback hvis jordtypedata mangler i prøven.
-# JB5 (sandblandet lerjord) hører til gruppen "JB2_JB4_10" (standardgruppen).
+# JB5 (sandblandet lerjord) er en mellemkategori.
 _FALLBACK_JB = 5
+
+# Fallback-afgrøde til Rt-klassificering — "vinterhvede" giver middel følsomhed.
+_FALLBACK_AFGRØDE = "vinterhvede"
 
 
 class NutrientCategorizer:
-    """Kategoriserer jordprøvers næringsstofniveauer via beregningsgrundlag.py."""
+    """Kategoriserer jordprøvers næringsstofniveauer via SEGES-normer."""
 
     CATEGORY_NAMES = [
         'Large Demand',
@@ -39,30 +52,36 @@ class NutrientCategorizer:
         jb: Optional[int] = None,
     ) -> Optional[str]:
         """
-        Kategoriser en næringsstofværdi.
+        Kategoriser en næringsstofværdi via SEGES-normer.
 
         Args:
             nutrient: 'rt', 'fosfor', 'kalium' eller 'magnesium'
             value:    Målt værdi
-            jb:       JB-nummer (1-11). Bruges kun for fosfor og kalium.
+            jb:       JB-nummer (1-11). Bruges for alle næringsstoffer.
                       Hvis None, bruges _FALLBACK_JB.
 
         Returns:
-            Kategorinavn eller None hvis value er None.
+            Kategorinavn (engelsk) eller None hvis value er None.
         """
         if value is None:
             return None
 
+        effective_jb = jb if jb is not None else _FALLBACK_JB
+
         if nutrient == 'rt':
-            return kategoriser_rt(value)
-        elif nutrient == 'magnesium':
-            return kategoriser_mg(value)
+            seges_klasse = seges_klassificer_rt(
+                value, effective_jb, _FALLBACK_AFGRØDE
+            )["klasse"]
         elif nutrient == 'fosfor':
-            return kategoriser_fosfor(value, jb if jb is not None else _FALLBACK_JB)
+            seges_klasse = klassificer_pt(value, jb_nr=effective_jb)["klasse"]
         elif nutrient == 'kalium':
-            return kategoriser_kalium(value, jb if jb is not None else _FALLBACK_JB)
+            seges_klasse = klassificer_kt(value, jb_nr=effective_jb)["klasse"]
+        elif nutrient == 'magnesium':
+            seges_klasse = klassificer_mgt(value)["klasse"]
         else:
             raise ValueError(f"Ukendt næringsstof: {nutrient}")
+
+        return _SEGES_TIL_KATEGORI.get(seges_klasse, "OK")
 
     @classmethod
     def categorize_sample(cls, sample: Dict[str, Any]) -> Dict[str, Any]:

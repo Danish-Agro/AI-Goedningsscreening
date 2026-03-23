@@ -24,6 +24,7 @@ from parsers.soiloptix_parser import SoilOptixParser
 from parsers.format_detector import detect_and_create_parser, FormatNotRecognizedError
 from analysis.nutrient_categorizer import NutrientCategorizer
 from analysis.beregningsgrundlag import beregn_kalkbehov, beregn_jb_nummer
+from analysis.agronomiske_advarsler import generer_advarsler, Alvorlighedsgrad
 from ai.assistant import FertilizerAssistant
 
 load_dotenv()
@@ -197,6 +198,42 @@ def enrich_sample(sample: dict) -> dict:
     return sample
 
 
+def _run_advarsler(m: dict, mark_nr: str) -> dict:
+    """
+    Kør alle agronomiske advarselschecks for én marks measurements-dict.
+    Returnerer dict med 'advarsler' (JSON-serialiserbar liste) og
+    'advarsler_prompt' (tekst klar til AI-prompt).
+    """
+    os_pct = m.get("organisk_stof_pct")
+    resultat = generer_advarsler(
+        mark_nr=mark_nr,
+        rt=m.get("rt"),
+        pt=m.get("fosfor_mg_100g"),
+        kt=m.get("kalium_mg_100g"),
+        mgt=m.get("magnesium_mg_100g"),
+        cut=m.get("kobber_mg_kg"),
+        bt=m.get("bor_mg_10kg"),
+        jb_nr=m.get("jb_nummer"),
+        organisk_stof_pct=os_pct,
+        kulstof_pct=(os_pct * 0.58) if os_pct is not None else None,
+        ler_pct=m.get("ler_pct"),
+    )
+    return {
+        "advarsler": [
+            {
+                "kode":            a.kode,
+                "titel":           a.titel,
+                "besked":          a.besked,
+                "alvorlighedsgrad": a.alvorlighedsgrad.value,
+                "parameter":       a.parameter,
+                "handling":        a.handling,
+            }
+            for a in resultat.advarsler
+        ],
+        "advarsler_prompt": resultat.til_prompt_tekst(),
+    }
+
+
 def process_samples(samples: list) -> list:
     for s in samples:
         try:
@@ -209,6 +246,16 @@ def process_samples(samples: list) -> list:
         except Exception as exc:
             app.logger.warning("categorize_sample fejlede: %s", exc)
         s["priority_score"] = NutrientCategorizer.get_field_priority(s)
+        try:
+            adv = _run_advarsler(
+                s.get("measurements", {}),
+                s.get("metadata", {}).get("marknummer") or "?",
+            )
+            s.update(adv)
+        except Exception as exc:
+            app.logger.warning("generer_advarsler fejlede: %s", exc)
+            s.setdefault("advarsler", [])
+            s.setdefault("advarsler_prompt", "")
     samples.sort(key=lambda s: s.get("priority_score", 0), reverse=True)
     return samples
 
@@ -267,22 +314,29 @@ def group_by_field(samples: list) -> list:
                 ranges[mkey] = {"min": round(mn, 2), "max": round(mx, 2)}
 
         synthetic = {"metadata": dict(group[0].get("metadata", {})), "measurements": avg_m}
+        adv = {"advarsler": [], "advarsler_prompt": ""}
         try:
             enrich_sample(synthetic)
             NutrientCategorizer.categorize_sample(synthetic)
             priority = NutrientCategorizer.get_field_priority(synthetic)
+            adv = _run_advarsler(
+                synthetic["measurements"],
+                synthetic["metadata"].get("marknummer") or "?",
+            )
         except Exception:
             priority = max(s.get("priority_score", 0) for s in group)
             synthetic.setdefault("categories", {})
 
         fields.append({
-            "metadata":     synthetic["metadata"],
-            "measurements": synthetic["measurements"],
-            "categories":   synthetic.get("categories", {}),
-            "kalkbehov":    synthetic.get("kalkbehov"),
-            "priority_score": priority,
-            "sample_count": len(group),
-            "ranges":       ranges,
+            "metadata":         synthetic["metadata"],
+            "measurements":     synthetic["measurements"],
+            "categories":       synthetic.get("categories", {}),
+            "kalkbehov":        synthetic.get("kalkbehov"),
+            "priority_score":   priority,
+            "sample_count":     len(group),
+            "ranges":           ranges,
+            "advarsler":        adv["advarsler"],
+            "advarsler_prompt": adv["advarsler_prompt"],
         })
 
     fields.sort(key=lambda f: f.get("priority_score", 0), reverse=True)
@@ -300,26 +354,29 @@ def get_ai_recommendations(fields: list) -> list:
         cats = f.get("categories", {})
         kalk = f.get("kalkbehov", {})
         prompt_fields.append({
-            "index":            i,
-            "marknummer":       meta.get("marknummer") or "Ukendt",
-            "antal_proever":    f.get("sample_count", 1),
-            "jb_nummer":        m.get("jb_nummer"),
-            "rt_maal":          m.get("rt"),
-            "rt_kategori":      cats.get("rt"),
-            "oensket_rt":       kalk.get("oensket_rt") if kalk else None,
-            "kalk_ton_ha":      kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
-            "fosfor_mg_100g":   m.get("fosfor_mg_100g"),
-            "fosfor_kategori":  cats.get("fosfor"),
-            "kalium_mg_100g":   m.get("kalium_mg_100g"),
-            "kalium_kategori":  cats.get("kalium"),
-            "magnesium_mg_100g": m.get("magnesium_mg_100g"),
-            "magnesium_kategori": cats.get("magnesium"),
+            "index":                i,
+            "marknummer":           meta.get("marknummer") or "Ukendt",
+            "antal_proever":        f.get("sample_count", 1),
+            "jb_nummer":            m.get("jb_nummer"),
+            "rt_maal":              m.get("rt"),
+            "rt_kategori":          cats.get("rt"),
+            "oensket_rt":           kalk.get("oensket_rt") if kalk else None,
+            "kalk_ton_ha":          kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
+            "fosfor_mg_100g":       m.get("fosfor_mg_100g"),
+            "fosfor_kategori":      cats.get("fosfor"),
+            "kalium_mg_100g":       m.get("kalium_mg_100g"),
+            "kalium_kategori":      cats.get("kalium"),
+            "magnesium_mg_100g":    m.get("magnesium_mg_100g"),
+            "magnesium_kategori":   cats.get("magnesium"),
+            "agronomiske_advarsler": f.get("advarsler_prompt", ""),
         })
 
     system = (
         "Du er faglig jordrådgiver hos Danish Agro. "
         "Skriv en kort screeningsanbefaling på dansk for hver mark — max 3 sætninger. "
         "Fokuser på hvilke næringsstoffer der bør undersøges nærmere og om kalk er relevant. "
+        "Tag hensyn til de agronomiske advarsler i feltet 'agronomiske_advarsler' — "
+        "nævn kritiske advarsler eksplicit i din anbefaling. "
         "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
         "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler en mark. "
         "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
