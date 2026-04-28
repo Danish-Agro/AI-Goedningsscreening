@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Afleveringsforretning — {{ kundenavn }}</title>
+  <title>AI Afleveringsforretning — {{ kundenavn }}</title>
   <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
         integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
@@ -188,7 +188,8 @@
   <div class="container d-flex flex-wrap align-items-center gap-2">
     <span class="text-muted small fw-semibold me-1">Sortér efter:</span>
     <div class="btn-group btn-group-sm" id="sortBtns">
-      <button class="btn btn-outline-secondary active" data-sort="prioritet" data-num="1">Prioritet</button>
+      <button class="btn btn-outline-secondary active" data-sort="prioritet" data-num="1"
+              title="Samlet behovsscore for Rt, fosfor, kalium og magnesium">Behovsscore</button>
       <button class="btn btn-outline-secondary" data-sort="marknummer" data-num="0">Marknummer</button>
       <button class="btn btn-outline-secondary" data-sort="rt"         data-num="1">Rt</button>
       <button class="btn btn-outline-secondary" data-sort="fosfor"     data-num="1">Fosfor</button>
@@ -197,6 +198,7 @@
       <button class="btn btn-outline-secondary" data-sort="kalk"       data-num="1">Kalkbehov</button>
     </div>
     <button class="btn btn-sm btn-outline-secondary sort-dir-btn" id="sortDirBtn" title="Skift retning">&#8595;</button>
+    <span class="text-muted small">Behovsscore er samlet næringsstofbehov. Kalk kan sorteres særskilt.</span>
   </div>
 </div>
 
@@ -267,6 +269,7 @@
            data-fosfor="{{ m.get('fosfor_mg_100g') if m.get('fosfor_mg_100g') is not none else '' }}"
            data-kalium="{{ m.get('kalium_mg_100g') if m.get('kalium_mg_100g') is not none else '' }}"
            data-magnesium="{{ m.get('magnesium_mg_100g') if m.get('magnesium_mg_100g') is not none else '' }}"
+           data-kalk="{{ (kalk.get('kalk_ton_per_ha', 0) if kalk else 0) }}"
            data-rt-kat="{{ cats.get('rt') or '' }}"
            data-p-kat="{{ cats.get('fosfor') or '' }}"
            data-k-kat="{{ cats.get('kalium') or '' }}"
@@ -286,7 +289,7 @@
               <small class="text-muted">{{ sample['sample_count'] }} prøver · gennemsnit</small>
             {% endif %}
             <span class="badge bg-{{ score | prioritet_farve }} priority-badge ms-auto">
-              Prioritet {{ score }}
+              Behovsscore {{ score }}
             </span>
             {% if m.get('jb_nummer') %}
               <span class="badge bg-light text-dark border priority-badge">JB{{ m['jb_nummer'] }}</span>
@@ -318,11 +321,11 @@
                   <tr>
                     <td>{{ param }}{% if unit %} <small class="text-muted">{{ unit }}</small>{% endif %}</td>
                     <td>
-                      {{ m.get(key) | fmt(2 if key == 'rt' else 1) }}
+                      {{ m.get(key) | fmt(2 if key in ['kobber_mg_kg', 'bor_mg_10kg'] else 1) }}
                       {% if r %}
                         <small class="text-muted d-block">
-                          min {{ r.min | fmt(2 if key == 'rt' else 1) }} –
-                          max {{ r.max | fmt(2 if key == 'rt' else 1) }}
+                          min {{ r.min | fmt(2 if key in ['kobber_mg_kg', 'bor_mg_10kg'] else 1) }} –
+                          max {{ r.max | fmt(2 if key in ['kobber_mg_kg', 'bor_mg_10kg'] else 1) }}
                         </small>
                       {% endif %}
                     </td>
@@ -349,16 +352,22 @@
             <!-- Kalkbehov -->
             {% if kalk %}
               {% set kalk_ton = kalk.get('kalk_ton_per_ha', 0) %}
+              {% set kalk_status = kalk.get('status') %}
               <div class="kalk-section {{ 'ingen-kalk' if kalk_ton == 0 }} p-3 mb-3">
                 <div class="row g-2 align-items-center">
                   <div class="col-auto"><strong>Kalk</strong></div>
                   <div class="col">
-                    <span class="me-3">Målt Rt: <strong>{{ kalk.get('maalt_rt') | fmt(2) }}</strong></span>
-                    <span class="me-3">Ønsket Rt: <strong>{{ kalk.get('oensket_rt') | fmt(2) }}</strong></span>
+                    <span class="me-3">Målt Rt: <strong>{{ kalk.get('maalt_rt') | fmt(1) }}</strong></span>
+                    <span class="me-3">Ønsket Rt: <strong>{{ kalk.get('oensket_rt') | fmt(1) }}</strong></span>
                     {% if kalk_ton > 0 %}
                       <span class="badge bg-warning text-dark">{{ kalk.get('kalk_ton_per_ha') | fmt(1) }} t CaCO₃/ha</span>
+                    {% elif kalk_status == 'bagatel' %}
+                      <span class="badge bg-info text-dark">Under bagatelgrænse</span>
                     {% else %}
                       <span class="badge bg-success">Intet kalkbehov</span>
+                    {% endif %}
+                    {% if kalk.get('note') %}
+                      <div class="small text-muted mt-1">{{ kalk.get('note') }}</div>
                     {% endif %}
                   </div>
                 </div>
@@ -419,7 +428,7 @@
             <!-- AI-anbefaling -->
             {% if anbefaling %}
               <div class="ai-box p-3">
-                <div class="ai-label mb-1">GPT-4o screeeningsanbefaling</div>
+                <div class="ai-label mb-1">AI-screeningsanbefaling</div>
                 {{ anbefaling }}
               </div>
             {% endif %}

@@ -248,24 +248,21 @@ CUT_HANDLINGER = {
         "kort": "Kobbertallene er meget lave og kobbermangel kan reducere kornudbyttet.",
         "fuld": (
             "Kobbertallene er meget lave og kobbermangel kan reducere kornudbyttet. "
-            "Hvor der er målt meget lave kobbertal, kan mangel i de følgende år forebygges "
-            "ved en engangstilførsel af minimum 2,5–5 kg kobber pr. ha (10–20 kg blåsten pr. ha). "
-            "Blåsten kan udspredes med gødningsspreder med mikrogranulatudstyr eller marksprøjten. "
-            "På humusrige jorde kan 10–15 kg kobber pr. ha (40–60 kg blåsten) være nødvendigt. "
-            "På grund af kobbers ringe mobilitet i jorden bør det opblandes godt i jorden."
+            "Hvor der er målt meget lave kobbertal, skal risikoen vurderes sammen med jordtype, "
+            "organisk stof og afgrøde. Blåsten må ikke anbefales. "
+            "Drøft i stedet en egnet kobberstrategi med planteavlskonsulenten."
         ),
-        "handling": "Engangstilførsel 2,5–5 kg Cu/ha (10–20 kg blåsten). Opbland godt i jorden.",
+        "handling": "Blåsten må ikke anbefales. Drøft alternativ kobberstrategi med konsulent.",
     },
     "Lav": {
         "kort": "Kobbertallene er lave. Korn er mest følsom over for kobbermangel.",
         "fuld": (
             "Kobbertallene er lave. "
             "Korn er mest følsom over for kobbermangel. "
-            "Kobbertallet kan hæves ved brug af blåsten — "
-            "eller der kan årligt udsprøjtes kobberoxychlorid eller lignende. "
-            "Diskuter dette med planteavlskonsulenten ved gødningsplanlægningen."
+            "Blåsten må ikke anbefales. "
+            "Diskuter en egnet kobberstrategi med planteavlskonsulenten ved gødningsplanlægningen."
         ),
-        "handling": "Tilføres Cu via blåsten eller kobberoxychlorid. Drøft med konsulent.",
+        "handling": "Blåsten må ikke anbefales. Drøft kobberstrategi med konsulent.",
     },
     "Middel": {
         "kort": "Kobbertallene er middelhøje. Ingen speciel hensyn til kobber.",
@@ -392,6 +389,16 @@ def get_symbol(klasse: str) -> dict:
     return SYMBOLER.get(klasse_norm, {"symbol": "?", "farve": "#9E9E9E"})
 
 
+def _format_prompt_vaerdi(parameter: str, værdi: float = None) -> str:
+    if værdi is None:
+        return ""
+    try:
+        decimals = 2 if parameter in {"Cut", "Bt"} else 1
+        return f" {float(værdi):.{decimals}f}"
+    except (TypeError, ValueError):
+        return f" {værdi}"
+
+
 def byg_prompt_sektion(parameter: str, klasse: str, værdi: float = None) -> str:
     """
     Bygger en færdig tekstsektion til AI-promptet for ét næringsstof.
@@ -406,7 +413,7 @@ def byg_prompt_sektion(parameter: str, klasse: str, værdi: float = None) -> str
         return f"{parameter}: {klasse} (ingen handlingstekst tilgængelig)"
 
     symbol_info = get_symbol(klasse)
-    værdi_str = f" {værdi}" if værdi is not None else ""
+    værdi_str = _format_prompt_vaerdi(parameter, værdi)
     klasse_norm = KLASSE_ALIAS.get(klasse, klasse)
 
     linjer = [

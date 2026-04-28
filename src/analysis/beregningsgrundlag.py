@@ -285,6 +285,10 @@ KALK_KOEFF_MAENGDE = [
     1.19244514714228e-05,
 ]
 
+KALK_MAX_LER_PCT = 30.0
+KALK_MIN_RT_DIFF = 0.10
+KALK_MIN_TON_PER_HA = 2.0
+
 
 def _polynom(humus: float, ler: float, koeff: list) -> float:
     """Evaluer bivariat polynomisk model af 3. grad."""
@@ -304,14 +308,19 @@ def _polynom(humus: float, ler: float, koeff: list) -> float:
     )
 
 
+def _ler_pct_til_kalkmodel(ler_pct: float) -> float:
+    """Begræns lerprocenten til kalkmodellens validerede område."""
+    return min(max(float(ler_pct), 0.0), KALK_MAX_LER_PCT)
+
+
 def beregn_oensket_rt(ler_pct: float, humus_pct: float) -> float:
     """Beregn ønsket Rt baseret på jordtype (ler% og humus%)."""
-    return _polynom(humus_pct, ler_pct, KALK_KOEFF_OENSKET_RT)
+    return _polynom(humus_pct, _ler_pct_til_kalkmodel(ler_pct), KALK_KOEFF_OENSKET_RT)
 
 
 def beregn_kalk_maengde_per_0_1_rt(ler_pct: float, humus_pct: float) -> float:
     """Beregn ton CaCO3/ha der skal til for at hæve Rt med 0.1 enhed."""
-    return _polynom(humus_pct, ler_pct, KALK_KOEFF_MAENGDE)
+    return _polynom(humus_pct, _ler_pct_til_kalkmodel(ler_pct), KALK_KOEFF_MAENGDE)
 
 
 def beregn_kalkbehov(maalt_rt: float, ler_pct: float, humus_pct: float) -> dict:
@@ -324,21 +333,52 @@ def beregn_kalkbehov(maalt_rt: float, ler_pct: float, humus_pct: float) -> dict:
       - kalk_ton_per_ha: float — ton CaCO3/ha der skal tilføres
       - kategori: str — Rt-kategori for den målte værdi
     """
-    oensket_rt = beregn_oensket_rt(ler_pct, humus_pct)
+    ler_pct_anvendt = _ler_pct_til_kalkmodel(ler_pct)
+    ler_pct_begraenset = ler_pct_anvendt != float(ler_pct)
+    oensket_rt = beregn_oensket_rt(ler_pct_anvendt, humus_pct)
     rt_diff = oensket_rt - maalt_rt
+    note = None
 
-    if rt_diff <= 0:
+    if rt_diff < KALK_MIN_RT_DIFF:
         kalk = 0.0
+        status = "intet_behov"
+        if rt_diff > 0:
+            note = (
+                f"Forskel på Rt er under bagatelgrænsen på {KALK_MIN_RT_DIFF:.1f}; "
+                "der vises derfor ikke kalkbehov."
+            )
     else:
-        maengde_per_0_1 = beregn_kalk_maengde_per_0_1_rt(ler_pct, humus_pct)
-        kalk = (rt_diff / 0.1) * maengde_per_0_1
+        maengde_per_0_1 = beregn_kalk_maengde_per_0_1_rt(ler_pct_anvendt, humus_pct)
+        beregnet_kalk = max((rt_diff / 0.1) * maengde_per_0_1, 0.0)
+        if beregnet_kalk < KALK_MIN_TON_PER_HA:
+            kalk = 0.0
+            status = "bagatel"
+            note = (
+                f"Beregnet kalkbehov er under {KALK_MIN_TON_PER_HA:.1f} t/ha "
+                "og behandles som bagatel i screeningen."
+            )
+        else:
+            kalk = beregnet_kalk
+            status = "behov"
+
+    if rt_diff < KALK_MIN_RT_DIFF:
+        beregnet_kalk = 0.0
+
+    if ler_pct_begraenset:
+        ler_note = f"Lerprocenten er begrænset til {KALK_MAX_LER_PCT:.0f}% i kalkmodellen."
+        note = f"{ler_note} {note}" if note else ler_note
 
     return {
-        "maalt_rt": round(maalt_rt, 2),
-        "oensket_rt": round(oensket_rt, 2),
+        "maalt_rt": round(maalt_rt, 1),
+        "oensket_rt": round(oensket_rt, 1),
         "rt_difference": round(rt_diff, 2),
+        "beregnet_kalk_ton_per_ha": round(max(beregnet_kalk, 0.0), 2),
         "kalk_ton_per_ha": round(max(kalk, 0.0), 2),
         "kategori_rt": kategoriser_rt(maalt_rt),
+        "status": status,
+        "note": note,
+        "ler_pct_anvendt": round(ler_pct_anvendt, 1),
+        "ler_pct_begraenset": ler_pct_begraenset,
     }
 
 

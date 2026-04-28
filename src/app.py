@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Gødningsscreening — Flask webapp
+AI Afleveringsforretning — Flask webapp
 Upload → gem → søg → vælg marker → analysér → rapport → PDF
 """
 
@@ -95,6 +95,25 @@ _NÆRINGSSTOF_PARAM_MAP = [
     ("magnesium", "Mgt", "magnesium_mg_100g"),
 ]
 
+_ZERO_MEANS_MISSING_KEYS = {"kobber_mg_kg", "bor_mg_10kg"}
+
+
+def _er_gyldig_maaling(key: str, value) -> bool:
+    if value is None:
+        return False
+    if key in _ZERO_MEANS_MISSING_KEYS:
+        try:
+            return float(value) > 0
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _normaliser_ugyldige_maalinger(m: dict) -> None:
+    for key in _ZERO_MEANS_MISSING_KEYS:
+        if key in m and not _er_gyldig_maaling(key, m.get(key)):
+            m[key] = None
+
 
 def _byg_næringsstof_kontekst(cats: dict, m: dict) -> dict:
     """
@@ -131,14 +150,16 @@ def _byg_næringsstof_kontekst(cats: dict, m: dict) -> dict:
 
     # Cut og Bt klassificeres direkte fra måleværdi via SEGES-klasser
     cut_val = m.get("kobber_mg_kg")
-    if cut_val is not None:
+    if _er_gyldig_maaling("kobber_mg_kg", cut_val):
         klasse = klassificer_naering(cut_val, CUT_KLASSER_SIMPEL)
-        _tilføj("cut", "Cut", klasse, cut_val)
+        if klasse:
+            _tilføj("cut", "Cut", klasse, cut_val)
 
     bt_val = m.get("bor_mg_10kg")
-    if bt_val is not None:
+    if _er_gyldig_maaling("bor_mg_10kg", bt_val):
         klasse = klassificer_naering(bt_val, BT_KLASSER)
-        _tilføj("bt", "Bt", klasse, bt_val)
+        if klasse:
+            _tilføj("bt", "Bt", klasse, bt_val)
 
     prompt = byg_fuld_prompt_kontekst(næringsstoffer) if næringsstoffer else ""
     return {"næringsstoffer": næringsstoffer, "symbology": symbology, "prompt": prompt}
@@ -250,6 +271,7 @@ def search_kunder(q: str) -> list:
 
 def enrich_sample(sample: dict) -> dict:
     m = sample.setdefault("measurements", {})
+    _normaliser_ugyldige_maalinger(m)
 
     if m.get("jb") is not None:
         try:
@@ -282,14 +304,16 @@ def _run_advarsler(m: dict, mark_nr: str, afgrøde: str = None) -> dict:
     'advarsler_prompt' (tekst klar til AI-prompt).
     """
     os_pct = m.get("organisk_stof_pct")
+    cut = m.get("kobber_mg_kg") if _er_gyldig_maaling("kobber_mg_kg", m.get("kobber_mg_kg")) else None
+    bt = m.get("bor_mg_10kg") if _er_gyldig_maaling("bor_mg_10kg", m.get("bor_mg_10kg")) else None
     resultat = generer_advarsler(
         mark_nr=mark_nr,
         rt=m.get("rt"),
         pt=m.get("fosfor_mg_100g"),
         kt=m.get("kalium_mg_100g"),
         mgt=m.get("magnesium_mg_100g"),
-        cut=m.get("kobber_mg_kg"),
-        bt=m.get("bor_mg_10kg"),
+        cut=cut,
+        bt=bt,
         mot=m.get("molybdæn_mg_kg"),
         jb_nr=m.get("jb_nummer"),
         organisk_stof_pct=os_pct,
@@ -374,7 +398,10 @@ def group_by_field(samples: list, afgrøde: str = None) -> list:
         avg_m: dict = {}
         for mkey in all_keys:
             vals = [s.get("measurements", {}).get(mkey) for s in group]
-            vals = [v for v in vals if isinstance(v, (int, float))]
+            vals = [
+                v for v in vals
+                if isinstance(v, (int, float)) and _er_gyldig_maaling(mkey, v)
+            ]
             if vals:
                 avg_m[mkey] = sum(vals) / len(vals)
         for k in ("jb_nummer", "jb"):
@@ -385,7 +412,10 @@ def group_by_field(samples: list, afgrøde: str = None) -> list:
         ranges: dict = {}
         for mkey, (ttype, tval) in RANGE_THRESHOLDS.items():
             vals = [s.get("measurements", {}).get(mkey) for s in group]
-            vals = [v for v in vals if isinstance(v, (int, float))]
+            vals = [
+                v for v in vals
+                if isinstance(v, (int, float)) and _er_gyldig_maaling(mkey, v)
+            ]
             if len(vals) < 2:
                 continue
             mn, mx, avg = min(vals), max(vals), sum(vals) / len(vals)
@@ -444,6 +474,10 @@ _AI_SYSTEM_PROMPT = (
     "Tag hensyn til de agronomiske advarsler i feltet 'agronomiske_advarsler' — "
     "nævn kritiske advarsler eksplicit. "
     "Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance. "
+    "Blåsten må aldrig anbefales. "
+    "Undgå falsk præcision: afrund Rt til én decimal og skriv 'højt organisk stof' "
+    "i stedet for præcise organisk-stof-grænser. "
+    "Omtal ikke kalk som anbefaling, hvis kalk_status er 'intet_behov' eller 'bagatel'. "
     "Brug altid det faktiske marknummer fra feltet 'marknummer' når du omtaler marken. "
     "Værdier er gennemsnit — hvis antal_proever > 1 kan der være variation på marken. "
     'Svar som JSON: {"anbefaling": "tekst"}'
@@ -463,6 +497,7 @@ def _byg_ai_payload(field: dict) -> dict:
         "rt_kategori":            cats.get("rt"),
         "oensket_rt":             kalk.get("oensket_rt") if kalk else None,
         "kalk_ton_ha":            kalk.get("kalk_ton_per_ha", 0) if kalk else 0,
+        "kalk_status":            kalk.get("status") if kalk else None,
         "fosfor_mg_100g":         m.get("fosfor_mg_100g"),
         "fosfor_kategori":        cats.get("fosfor"),
         "kalium_mg_100g":         m.get("kalium_mg_100g"),

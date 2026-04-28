@@ -97,6 +97,8 @@ FORBIDDEN_TERMS = [
     "dosis",
     "tildel",
     "tilførsel",
+    "blåsten",
+    "blaasten",
     "kg p",
     "kg n",
     "timing",
@@ -385,7 +387,10 @@ class FertilizerAssistant:
                     f"{result_dict.get('unit')}."
                 )
         elif result_type == "top_priority":
-            answer = "Toplisten er beregnet deterministisk fra priority_score i datasættet."
+            answer = (
+                "Toplisten er beregnet deterministisk som samlet behovsscore for Rt, fosfor, "
+                "kalium og magnesium. Kalkbehov kan sorteres særskilt i rapporten."
+            )
         else:
             answer = "Svar er afgrænset til deterministisk screening i fase 1."
         return {"answer": answer, "assumptions": [], "out_of_scope": []}

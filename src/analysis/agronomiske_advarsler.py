@@ -169,7 +169,7 @@ def check_høj_k_hæmmer_mg(kt: float, mgt: float) -> Optional[Advarsel]:
             alvorlighedsgrad=alvor,
             parameter="Kt/Mgt",
             handling=(
-                "Tilsæt magnesium via magnesiumkalk eller MgSO4-gødning. "
+                "Tilsæt magnesium via magnesiumkalk eller Kieserit (MgSO4). "
                 "Undgå at øge K-tilførslen yderligere."
             ),
         )
@@ -190,7 +190,7 @@ def check_høj_k_hæmmer_mg(kt: float, mgt: float) -> Optional[Advarsel]:
 
 def check_kobber_sandjord(cut: float, jb_nr: int, organisk_stof_pct: float = None) -> Optional[Advarsel]:
     """
-    Kobbermangel er primært et problem på sandjord — særlig med højt org. stof.
+    Kobbermangel er primært et problem på JB4 og nedefter — særlig med højt org. stof.
     Kilde: SEGES 2021, s. 6
     """
     er_sandjord = jb_nr in [1, 2, 3, 4]
@@ -200,28 +200,29 @@ def check_kobber_sandjord(cut: float, jb_nr: int, organisk_stof_pct: float = Non
         if højt_os:
             return Advarsel(
                 kode="LAV_CU_SANDJORD_HØJ_OS",
-                titel="Kritisk kobberrisiko — sandjord med højt organisk stof",
+                titel="Kritisk kobberrisiko — JB4 og nedefter med højt organisk stof",
                 besked=(
-                    f"Lavt kobbertal (Cut {cut}) på sandjord (JB {jb_nr}) med højt "
-                    f"organisk stof ({organisk_stof_pct}%) giver høj risiko for kobbermangel."
+                    f"Lavt kobbertal (Cut {cut:.2f}) på JB4 og nedefter med højt "
+                    "organisk stof giver høj risiko for kobbermangel."
                 ),
                 alvorlighedsgrad=Alvorlighedsgrad.KRITISK,
                 parameter="Cut",
                 handling=(
-                    "Engangstilførsel af 10–15 kg kobber/ha (40–60 kg blåsten). "
-                    "Opblandes godt i jorden — kobber har ringe mobilitet."
+                    "Blåsten må ikke anbefales. Vurder alternativ kobberstrategi med planteavlskonsulent."
                 ),
             )
         else:
             return Advarsel(
                 kode="LAV_CU_SANDJORD",
-                titel="Lavt kobbertal på sandjord",
-                besked=f"Cut på {cut} er lavt. Kobbermangel er primært et problem på sandjord (JB {jb_nr}).",
+                titel="Lavt kobbertal på JB4 og nedefter",
+                besked=(
+                    f"Cut på {cut:.2f} er lavt. Kobbermangel er primært et problem "
+                    "på JB4 og nedefter."
+                ),
                 alvorlighedsgrad=Alvorlighedsgrad.ADVARSEL,
                 parameter="Cut",
                 handling=(
-                    "Engangstilførsel af 2,5–5 kg kobber/ha (10–20 kg blåsten). "
-                    "Kornafgrøder, bælgplanter og lucerne er mest følsomme."
+                    "Blåsten må ikke anbefales. Kornafgrøder, bælgplanter og lucerne er mest følsomme."
                 ),
             )
     return None
@@ -392,10 +393,10 @@ def generer_advarsler(
     if kt is not None and mgt is not None:
         checks.append(check_høj_k_hæmmer_mg(kt, mgt))
 
-    if cut is not None and jb_nr is not None:
+    if cut is not None and cut > 0 and jb_nr is not None:
         checks.append(check_kobber_sandjord(cut, jb_nr, organisk_stof_pct))
 
-    if bt is not None and rt is not None:
+    if bt is not None and bt > 0 and rt is not None:
         checks.append(check_bor_raps_roer(bt, rt, afgrøde))
 
     if ler_pct is not None and kulstof_pct is not None:

@@ -8,6 +8,8 @@ Kilde: Landbrug & Fødevarer F.m.b.A. / SEGES, PlanteInnovation
 Anvendes som datagrundlag i Danish Agros AI-gødningsscreening.
 """
 
+import math
+
 # ---------------------------------------------------------------------------
 # KLASSE-DEFINITIONER (generelle for alle næringsstoffer)
 # ---------------------------------------------------------------------------
@@ -167,10 +169,9 @@ CUT_ENHEDER = {
 }
 
 CUT_FAGLIG_NOTE = (
-    "Kobbermangel primært problem på sandjord, især med højt organisk stof. "
+    "Kobbermangel er primært et problem på JB4 og nedefter, især ved højt organisk stof. "
     "Kornafgrøder, bælgplanter, lucerne og spinat er mest følsomme. "
-    "Afhjælpes ved engangstilførsel af 2,5–5 kg Cu/ha (10–20 kg blåsten). "
-    "Humusrige jorde kan kræve 10–15 kg Cu/ha. Opblandes godt i jorden pga. ringe mobilitet."
+    "Blåsten må ikke anbefales; kobberstrategi skal vurderes med planteavlskonsulent."
 )
 
 # ---------------------------------------------------------------------------
@@ -362,16 +363,35 @@ HUMUS_KONVERTERING = {
 # HJÆLPEFUNKTIONER
 # ---------------------------------------------------------------------------
 
-def klassificer_naering(værdi: float, klasse_liste: list) -> str:
+def _afrund_til_tabeldecimal(værdi: float) -> float:
+    """Afrund halvt op til én decimal, så gennemsnit passer til SEGES-tabeller."""
+    return math.floor(float(værdi) * 10 + 0.5) / 10
+
+
+def klassificer_naering(værdi: float, klasse_liste: list) -> str | None:
     """
     Returnerer klasse-navn for en given måleværdi ud fra en liste af
-    {klasse, min, max} dicts. Grænser er inklusive nedre, eksklusiv øvre.
+    {klasse, min, max} dicts.
+
+    Værdier afrundes til én decimal før opslag, fordi SEGES-tabellerne er
+    angivet med én decimal. Hvis værdien stadig ikke passer i et interval,
+    returneres None i stedet for at falde tilbage til højeste klasse.
     """
-    for k in klasse_liste:
-        if k["min"] <= værdi < k["max"]:
+    if værdi is None:
+        return None
+
+    try:
+        tabelværdi = _afrund_til_tabeldecimal(værdi)
+    except (TypeError, ValueError):
+        return None
+
+    for i, k in enumerate(klasse_liste):
+        high = k["max"]
+        next_min = klasse_liste[i + 1]["min"] if i + 1 < len(klasse_liste) else float("inf")
+        include_upper = high == float("inf") or next_min > high
+        if k["min"] <= tabelværdi < high or (include_upper and tabelværdi == high):
             return k["klasse"]
-    # Fangnet: returner højeste klasse hvis over alle grænser
-    return klasse_liste[-1]["klasse"]
+    return None
 
 
 def get_jb_gruppe(jb_nr: int) -> str:
@@ -426,7 +446,7 @@ def klassificer_rt(rt_værdi: float, jb_nr: int, afgrøde: str,
         "jb_gruppe": jb_gruppe,
         "afgrøde_følsomhed": følsomhed,
         "os_note": os_note,
-        "beskrivelse": KLASSE_BESKRIVELSER[klasse],
+        "beskrivelse": KLASSE_BESKRIVELSER.get(klasse, "Værdien ligger uden for klassifikationsintervallet."),
     }
 
 
@@ -443,7 +463,7 @@ def klassificer_pt(pt_værdi: float, jb_nr: int = None) -> dict:
         "klasse": klasse,
         "pt_værdi": pt_værdi,
         "skala": skala,
-        "beskrivelse": KLASSE_BESKRIVELSER[klasse],
+        "beskrivelse": KLASSE_BESKRIVELSER.get(klasse, "Værdien ligger uden for klassifikationsintervallet."),
     }
 
 
@@ -460,7 +480,7 @@ def klassificer_kt(kt_værdi: float, jb_nr: int) -> dict:
         "klasse": klasse,
         "kt_værdi": kt_værdi,
         "jordtype": jordtype,
-        "beskrivelse": KLASSE_BESKRIVELSER[klasse],
+        "beskrivelse": KLASSE_BESKRIVELSER.get(klasse, "Værdien ligger uden for klassifikationsintervallet."),
     }
 
 
@@ -470,7 +490,7 @@ def klassificer_mgt(mgt_værdi: float) -> dict:
     return {
         "klasse": klasse,
         "mgt_værdi": mgt_værdi,
-        "beskrivelse": KLASSE_BESKRIVELSER[klasse],
+        "beskrivelse": KLASSE_BESKRIVELSER.get(klasse, "Værdien ligger uden for klassifikationsintervallet."),
     }
 
 

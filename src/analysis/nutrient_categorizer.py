@@ -81,6 +81,9 @@ class NutrientCategorizer:
         else:
             raise ValueError(f"Ukendt næringsstof: {nutrient}")
 
+        if seges_klasse is None:
+            return None
+
         return _SEGES_TIL_KATEGORI.get(seges_klasse, "OK")
 
     @classmethod

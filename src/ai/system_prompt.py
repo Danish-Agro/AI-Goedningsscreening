@@ -55,6 +55,8 @@ _BEGRÆNSNINGER_SEKTION = """\
 ## Begrænsninger (fase 1 — screening)
 - Skriv KUN screeningsanbefalinger — ikke endelige gødningsplaner.
 - Nævn IKKE konkrete gødningsdoser, kg/ha, produktnavne, lovgivning eller compliance.
+- Blåsten må aldrig anbefales.
+- Undgå falsk præcision: afrund Rt til én decimal og skriv ikke præcise organisk-stof-grænser i kommentarer.
 - Alle værdier er jordprøvegennemsnit og kræver faglig validering.
 - Hvis antal_proever > 1, kan der være variation inden for marken.\
 """
