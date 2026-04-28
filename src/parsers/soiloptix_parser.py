@@ -22,6 +22,15 @@ class SoilOptixParser:
     ROW_MARKNUMMER = 9
     ROW_PARAMETER_HEADER = 10
     ROW_DATA_START = 11
+    AREA_LABELS = (
+        'areal',
+        'areal ha',
+        'areal (ha)',
+        'markareal',
+        'markareal ha',
+        'hektar',
+        'ha',
+    )
     
     # Expected parameters
     PARAMETERS = [
@@ -64,7 +73,7 @@ class SoilOptixParser:
         # (typically col 3 or 4 depending on the file variant)
         first_data_col = None
         for col_idx in range(2, min(8, len(self.df.columns))):
-            if not pd.isna(self.df.iloc[self.ROW_ORDRENUMMER, col_idx]):
+            if self._to_float_or_none(self.df.iloc[self.ROW_ORDRENUMMER, col_idx]) is not None:
                 first_data_col = col_idx
                 break
         if first_data_col is None:
@@ -75,7 +84,7 @@ class SoilOptixParser:
             # Check if this column has data (ordrenummer should be present)
             ordrenummer = self.df.iloc[self.ROW_ORDRENUMMER, col_idx]
             
-            if pd.isna(ordrenummer):
+            if self._to_float_or_none(ordrenummer) is None:
                 # Skip empty columns; some files contain gaps between sample columns.
                 continue
                 
@@ -94,6 +103,7 @@ class SoilOptixParser:
             provebetegnelse = self.df.iloc[self.ROW_PROVEBETEGNELSE, col_idx]
             field_id = self.df.iloc[self.ROW_FIELD_ID, col_idx]
             marknummer = self.df.iloc[self.ROW_MARKNUMMER, col_idx]
+            areal_ha = self._find_metadata_float(col_idx, self.AREA_LABELS)
             
             # Extract measurements
             measurements = {}
@@ -125,6 +135,7 @@ class SoilOptixParser:
                     'provebetegnelse': str(provebetegnelse) if not pd.isna(provebetegnelse) else None,
                     'field_id': str(field_id) if not pd.isna(field_id) else None,
                     'marknummer': str(marknummer) if not pd.isna(marknummer) else None,
+                    'areal_ha': areal_ha,
                 },
                 'measurements': {
                     'rt': measurements.get('Rt'),  # pH + 0.5
@@ -147,6 +158,32 @@ class SoilOptixParser:
         except Exception as e:
             print(f"Warning: Failed to parse sample at column {col_idx}: {e}")
             return None
+
+    @staticmethod
+    def _normalize_label(value: Any) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip().lower().replace(".", "")
+
+    @staticmethod
+    def _to_float_or_none(value: Any):
+        if pd.isna(value):
+            return None
+        try:
+            if isinstance(value, str):
+                value = value.strip().replace(',', '.')
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    def _find_metadata_float(self, col_idx: int, labels: tuple[str, ...]):
+        label_set = {self._normalize_label(label) for label in labels}
+        for row_idx in range(0, min(self.ROW_PARAMETER_HEADER, len(self.df))):
+            for label_col_idx in range(0, col_idx):
+                label = self._normalize_label(self.df.iloc[row_idx, label_col_idx])
+                if label in label_set:
+                    return self._to_float_or_none(self.df.iloc[row_idx, col_idx])
+        return None
     
     def to_json(self, indent=2) -> str:
         """Convert samples to JSON string"""

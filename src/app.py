@@ -115,6 +115,15 @@ def _normaliser_ugyldige_maalinger(m: dict) -> None:
             m[key] = None
 
 
+def _to_float_or_none(value):
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _byg_næringsstof_kontekst(cats: dict, m: dict) -> dict:
     """
     Bygger input til byg_fuld_prompt_kontekst() og symbology til frontend.
@@ -254,6 +263,7 @@ def search_kunder(q: str) -> list:
                     "marknummer": s.get("metadata", {}).get("marknummer"),
                     "field_id":   s.get("metadata", {}).get("field_id"),
                     "analyse_nr": s.get("metadata", {}).get("analyse_nr"),
+                    "areal_ha":    s.get("metadata", {}).get("areal_ha"),
                 }
                 for s in samples
             ]
@@ -424,6 +434,14 @@ def group_by_field(samples: list, afgrøde: str = None) -> list:
                 ranges[mkey] = {"min": round(mn, 2), "max": round(mx, 2)}
 
         synthetic = {"metadata": dict(group[0].get("metadata", {})), "measurements": avg_m}
+        arealer = [
+            _to_float_or_none(s.get("metadata", {}).get("areal_ha"))
+            for s in group
+        ]
+        arealer = [a for a in arealer if a is not None]
+        if arealer:
+            synthetic["metadata"]["areal_ha"] = max(arealer)
+
         adv = {"advarsler": [], "advarsler_prompt": ""}
         try:
             enrich_sample(synthetic)
@@ -491,6 +509,7 @@ def _byg_ai_payload(field: dict) -> dict:
     kalk = field.get("kalkbehov", {})
     return {
         "marknummer":             meta.get("marknummer") or "Ukendt",
+        "areal_ha":               meta.get("areal_ha"),
         "antal_proever":          field.get("sample_count", 1),
         "jb_nummer":              m.get("jb_nummer"),
         "rt_maal":                m.get("rt"),
@@ -735,6 +754,12 @@ def analyse():
         1 for f in fields
         if (f.get("kalkbehov") or {}).get("kalk_ton_per_ha", 0) > 0
     )
+    arealer = [
+        _to_float_or_none(f.get("metadata", {}).get("areal_ha"))
+        for f in fields
+    ]
+    arealer = [a for a in arealer if a is not None]
+    total_areal_ha = sum(arealer) if arealer else None
 
     dt   = datetime.now()
     dato = f"{dt.day}. {MÅNEDER_DK[dt.month - 1]} {dt.year}"
@@ -746,6 +771,7 @@ def analyse():
         kundenavn=kundenavn_display,
         kundenavn_mappe=first_mappe,
         kalk_count=kalk_count,
+        total_areal_ha=total_areal_ha,
         ai_aktiv=openai_client is not None,
         dato=dato,
     )

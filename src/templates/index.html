@@ -285,6 +285,7 @@
     const mark  = escHtml(s.marknummer || '—');
     const fid   = s.field_id ? `<span class="text-muted"> · ${escHtml(s.field_id)}</span>` : '';
     const anr   = s.analyse_nr ? `Analyse nr. ${s.analyse_nr} · ` : '';
+    const areal = Number.isFinite(Number(s.areal_ha)) ? ` · ${Number(s.areal_ha).toFixed(1)} ha` : '';
     return `
       <label class="list-group-item mark-item d-flex gap-3 align-items-start py-2"
              for="${cbId}" data-mappe="${escHtml(mappe)}">
@@ -294,7 +295,7 @@
                onchange="opdaterValg()">
         <div>
           <strong>Mark ${mark}</strong>${fid}
-          <br><small class="text-muted">${anr}Uploadet ${dato}</small>
+          <br><small class="text-muted">${anr}Uploadet ${dato}${areal}</small>
         </div>
       </label>`;
   }

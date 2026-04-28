@@ -176,6 +176,9 @@
     {% if kalk_count > 0 %}
       <span class="badge bg-warning text-dark rounded-pill">{{ kalk_count }} med kalkbehov</span>
     {% endif %}
+    {% if total_areal_ha %}
+      <span class="badge bg-light text-dark border rounded-pill">{{ total_areal_ha | fmt(1) }} ha i alt</span>
+    {% endif %}
     {% if not ai_aktiv %}
       <span class="badge bg-secondary rounded-pill">AI-anbefalinger deaktiveret</span>
     {% endif %}
@@ -220,14 +223,19 @@
     <div class="collapse show" id="oversigtBody">
       <div class="card-body">
         <div class="row g-3 mb-3">
-          <div class="col-6 col-md-6">
+          <div class="col-6 col-md-4">
             <div class="text-muted small text-uppercase mb-1">Marker med kalkbehov</div>
             <div class="h4 mb-0">{{ kalk_count }}</div>
             <div class="text-muted small">ud af {{ samples|length }} mark{{ 'er' if samples|length != 1 }}</div>
           </div>
-          <div class="col-6 col-md-6">
+          <div class="col-6 col-md-4">
             <div class="text-muted small text-uppercase mb-1">Antal marker</div>
             <div class="h4 mb-0">{{ samples|length }}</div>
+          </div>
+          <div class="col-12 col-md-4">
+            <div class="text-muted small text-uppercase mb-1">Samlet areal</div>
+            <div class="h4 mb-0">{{ total_areal_ha | fmt(1) if total_areal_ha else '—' }}</div>
+            <div class="text-muted small">ha</div>
           </div>
         </div>
         <h6 class="text-uppercase text-muted small mb-2">Næringsstofbehov — antal marker per kategori</h6>
@@ -293,6 +301,9 @@
             </span>
             {% if m.get('jb_nummer') %}
               <span class="badge bg-light text-dark border priority-badge">JB{{ m['jb_nummer'] }}</span>
+            {% endif %}
+            {% if meta.get('areal_ha') %}
+              <span class="badge bg-light text-dark border priority-badge">{{ meta.get('areal_ha') | fmt(1) }} ha</span>
             {% endif %}
           </div>
 
